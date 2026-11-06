@@ -1,0 +1,38 @@
+# Crea una release su GitHub quando si pubblica un tag "v<versione>", es. v2.1:
+#   git tag v2.1 && git push origin v2.1
+# Compila l'app su un Mac di GitHub e allega MD-Viewer.dmg e MD-Viewer.zip,
+# con le note prese dalla sezione corrispondente di CHANGELOG.md.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Controlla che il tag corrisponda alla versione dell'app
+        run: |
+          version=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" Sources/App/Info.plist)
+          if [[ "$GITHUB_REF_NAME" != "v$version" ]]; then
+            echo "::error::Il tag $GITHUB_REF_NAME non corrisponde alla versione $version in Sources/App/Info.plist"
+            exit 1
+          fi
+          echo "VERSION=$version" >> "$GITHUB_ENV"
+
+      - name: Compila
+        run: ./build.sh --zip --dmg
+
+      - name: Pubblica la release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          awk -v v="$VERSION" '/^## / { if (found) exit; found = ($2 == v); next } found' CHANGELOG.md > notes.md
+          gh release create "$GITHUB_REF_NAME" build/MD-Viewer.dmg build/MD-Viewer.zip \
+            --title "MD Viewer $VERSION" --notes-file notes.md

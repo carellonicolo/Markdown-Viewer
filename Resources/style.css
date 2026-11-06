@@ -1,0 +1,187 @@
+/* ---------- Colori (chiaro / scuro) ---------- */
+:root {
+  --fg: #1f2328;
+  --muted: #59636e;
+  --bg: #ffffff;
+  --border: #d1d9e0;
+  --code-bg: #f6f8fa;
+  --link: #0969da;
+  --row-alt: #f6f8fa;
+
+  --hl-comment: #6e7781;
+  --hl-keyword: #cf222e;
+  --hl-string: #0a3069;
+  --hl-number: #0550ae;
+  --hl-title: #8250df;
+  --hl-builtin: #953800;
+  --hl-tag: #116329;
+  --hl-add-fg: #116329; --hl-add-bg: #dafbe1;
+  --hl-del-fg: #82071e; --hl-del-bg: #ffebe9;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --fg: #e6edf3;
+    --muted: #9198a1;
+    --bg: #1e1f22;
+    --border: #3d444d;
+    --code-bg: #2a2c31;
+    --link: #4493f8;
+    --row-alt: #25272b;
+
+    --hl-comment: #8b949e;
+    --hl-keyword: #ff7b72;
+    --hl-string: #a5d6ff;
+    --hl-number: #79c0ff;
+    --hl-title: #d2a8ff;
+    --hl-builtin: #ffa657;
+    --hl-tag: #7ee787;
+    --hl-add-fg: #aff5b4; --hl-add-bg: #033a16;
+    --hl-del-fg: #ffdcd7; --hl-del-bg: #67060c;
+  }
+}
+
+/* ---------- Tema Standard ---------- */
+html {
+  --font: -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif;
+  --heading-font: var(--font);
+  --size: 16px;
+  --leading: 1.6;
+  --width: 820px;
+  --pad: 36px 40px 80px;
+  background: var(--bg);
+}
+
+/* ---------- Tema Libro ---------- */
+html.theme-libro {
+  --font: "New York", ui-serif, Georgia, "Times New Roman", serif;
+  --heading-font: var(--font);
+  --size: 19px;
+  --leading: 1.75;
+  --width: 680px;
+  --pad: 56px 40px 100px;
+  --bg: #fbf8f1;
+  --code-bg: #f1ece1;
+  --row-alt: #f4efe5;
+  --border: #e0d8c8;
+}
+@media (prefers-color-scheme: dark) {
+  html.theme-libro { --bg: #1d1c1a; --code-bg: #2a2825; --row-alt: #252320; --border: #3f3b35; --fg: #e8e2d6; }
+}
+html.theme-libro h1, html.theme-libro h2 { border-bottom: none; }
+html.theme-libro h1 { text-align: center; margin-bottom: 1.2em; }
+html.theme-libro p { hyphens: auto; }
+
+/* ---------- Tema Compatto ---------- */
+html.theme-compatto {
+  --size: 14px;
+  --leading: 1.45;
+  --width: 1100px;
+  --pad: 20px 28px 48px;
+}
+html.theme-compatto h1, html.theme-compatto h2, html.theme-compatto h3 { margin-top: 1.1em; margin-bottom: .45em; }
+html.theme-compatto p, html.theme-compatto ul, html.theme-compatto ol,
+html.theme-compatto pre, html.theme-compatto table, html.theme-compatto blockquote { margin-bottom: .7em; }
+
+/* ---------- Base ---------- */
+body {
+  margin: 0;
+  color: var(--fg);
+  background: var(--bg);
+  font: var(--size)/var(--leading) var(--font);
+  -webkit-font-smoothing: antialiased;
+}
+.markdown-body {
+  max-width: var(--width);
+  margin: 0 auto;
+  padding: var(--pad);
+  word-wrap: break-word;
+}
+.markdown-body > *:first-child { margin-top: 0 !important; }
+
+h1, h2, h3, h4, h5, h6 { margin: 1.5em 0 0.6em; font-family: var(--heading-font); font-weight: 600; line-height: 1.25; }
+h1 { font-size: 2em; padding-bottom: .3em; border-bottom: 1px solid var(--border); }
+h2 { font-size: 1.5em; padding-bottom: .3em; border-bottom: 1px solid var(--border); }
+h3 { font-size: 1.25em; }
+h4 { font-size: 1em; }
+h5 { font-size: .875em; }
+h6 { font-size: .85em; color: var(--muted); }
+
+p, ul, ol, blockquote, table, pre, dl { margin: 0 0 1em; }
+a { color: var(--link); text-decoration: none; }
+a:hover { text-decoration: underline; }
+hr { height: 2px; border: 0; background: var(--border); margin: 1.5em 0; }
+img { max-width: 100%; }
+
+ul, ol { padding-left: 2em; }
+li + li { margin-top: .25em; }
+li > ul, li > ol { margin-bottom: 0; }
+li:has(> input[type="checkbox"]) { list-style: none; }
+li > input[type="checkbox"] { margin: 0 .4em 0 -1.4em; vertical-align: middle; }
+
+blockquote {
+  padding: 0 1em;
+  color: var(--muted);
+  border-left: 4px solid var(--border);
+}
+
+code, pre {
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 85%;
+}
+code {
+  padding: .2em .4em;
+  background: var(--code-bg);
+  border-radius: 6px;
+}
+pre {
+  padding: 14px 16px;
+  overflow: auto;
+  line-height: 1.45;
+  background: var(--code-bg);
+  border-radius: 8px;
+}
+pre code { padding: 0; background: none; font-size: 100%; }
+
+table { border-collapse: collapse; display: block; overflow: auto; width: max-content; max-width: 100%; }
+th, td { padding: 6px 13px; border: 1px solid var(--border); }
+th { font-weight: 600; }
+tr:nth-child(2n) { background: var(--row-alt); }
+
+/* ---------- Colori del codice (highlight.js) ---------- */
+.hljs-comment, .hljs-quote { color: var(--hl-comment); font-style: italic; }
+.hljs-keyword, .hljs-selector-tag, .hljs-literal, .hljs-type, .hljs-doctag { color: var(--hl-keyword); }
+.hljs-string, .hljs-regexp, .hljs-meta .hljs-string { color: var(--hl-string); }
+.hljs-number, .hljs-attr, .hljs-attribute, .hljs-variable, .hljs-template-variable,
+.hljs-selector-attr, .hljs-selector-class, .hljs-selector-id, .hljs-symbol, .hljs-bullet,
+.hljs-link, .hljs-operator, .hljs-meta { color: var(--hl-number); }
+.hljs-title, .hljs-section, .hljs-title.function_ { color: var(--hl-title); }
+.hljs-built_in, .hljs-title.class_ { color: var(--hl-builtin); }
+.hljs-name, .hljs-tag, .hljs-selector-pseudo { color: var(--hl-tag); }
+.hljs-addition { color: var(--hl-add-fg); background: var(--hl-add-bg); }
+.hljs-deletion { color: var(--hl-del-fg); background: var(--hl-del-bg); }
+.hljs-emphasis { font-style: italic; }
+.hljs-strong { font-weight: bold; }
+
+/* ---------- Formule e diagrammi ---------- */
+.math-block { margin: 0 0 1em; overflow-x: auto; overflow-y: hidden; }
+.katex { font-size: 1.1em; }
+pre.mermaid[data-processed] { background: none; text-align: center; padding: 0; }
+@media (prefers-color-scheme: dark) {
+  pre.mermaid[data-processed] svg { filter: invert(0.9) hue-rotate(180deg); }
+}
+
+@media print {
+  /* Su carta sempre colori chiari, anche se il Mac è in modalità scura. */
+  html, html.theme-libro, html.theme-compatto {
+    --fg: #1f2328; --muted: #59636e; --bg: #fff; --border: #d1d9e0;
+    --code-bg: #f6f8fa; --link: #0969da; --row-alt: #f6f8fa;
+    --hl-comment: #6e7781; --hl-keyword: #cf222e; --hl-string: #0a3069; --hl-number: #0550ae;
+    --hl-title: #8250df; --hl-builtin: #953800; --hl-tag: #116329;
+    --hl-add-fg: #116329; --hl-add-bg: #dafbe1; --hl-del-fg: #82071e; --hl-del-bg: #ffebe9;
+  }
+  .markdown-body { max-width: none; padding: 0; }
+  pre { white-space: pre-wrap; }
+  h1, h2, h3, h4 { break-after: avoid; }
+  pre, table, img, .math-block, pre.mermaid { break-inside: avoid; }
+  pre.mermaid[data-processed] svg { filter: none !important; }
+}
