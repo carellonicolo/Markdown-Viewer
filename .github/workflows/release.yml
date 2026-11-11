@@ -1,12 +1,18 @@
-# Crea una release su GitHub quando si pubblica un tag "v<versione>", es. v2.1:
-#   git tag v2.1 && git push origin v2.1
-# Compila l'app su un Mac di GitHub e allega MD-Viewer.dmg e MD-Viewer.zip,
-# con le note prese dalla sezione corrispondente di CHANGELOG.md.
+# Compila l'app e allega MD-Viewer.dmg e MD-Viewer.zip alla release di una versione.
+# Si avvia pubblicando una release su github.com (Releases → Draft a new release, tag "v<versione>",
+# es. v2.1) oppure pubblicando lo stesso tag da git. Se la release non ha descrizione,
+# usa la sezione corrispondente di CHANGELOG.md.
 name: Release
 
 on:
   push:
     tags: ["v*"]
+  release:
+    types: [published]
+
+# Creare la release dal sito fa partire entrambi gli eventi: le esecuzioni vanno una alla volta.
+concurrency:
+  group: release-${{ github.ref_name }}
 
 permissions:
   contents: write
@@ -29,10 +35,17 @@ jobs:
       - name: Compila
         run: ./build.sh --zip --dmg
 
-      - name: Pubblica la release
+      - name: Pubblica i file nella release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           awk -v v="$VERSION" '/^## / { if (found) exit; found = ($2 == v); next } found' CHANGELOG.md > notes.md
-          gh release create "$GITHUB_REF_NAME" build/MD-Viewer.dmg build/MD-Viewer.zip \
-            --title "MD Viewer $VERSION" --notes-file notes.md
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" build/MD-Viewer.dmg build/MD-Viewer.zip --clobber
+            if [[ -z "$(gh release view "$GITHUB_REF_NAME" --json body --jq .body)" ]]; then
+              gh release edit "$GITHUB_REF_NAME" --notes-file notes.md
+            fi
+          else
+            gh release create "$GITHUB_REF_NAME" build/MD-Viewer.dmg build/MD-Viewer.zip \
+              --title "MD Viewer $VERSION" --notes-file notes.md
+          fi

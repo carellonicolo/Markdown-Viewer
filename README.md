@@ -116,16 +116,12 @@ Servono solo gli strumenti da riga di comando di Xcode (`xcode-select --install`
 1. Aumenta la versione in `Sources/App/Info.plist` (`CFBundleShortVersionString`, es. 2.2, e
    `CFBundleVersion` di 1).
 2. Aggiungi in cima a `CHANGELOG.md` una sezione `## 2.2 — data` con le novità.
-3. Pubblica il tag:
+3. Fai il commit e pubblicalo (Push).
+4. Su GitHub apri **Releases → Draft a new release**, in «Choose a tag» scrivi `v2.2` e scegli
+   «Create new tag», poi premi **Publish release** (la descrizione si può lasciare vuota).
 
-   ```sh
-   git commit -am "Versione 2.2"
-   git tag v2.2
-   git push && git push origin v2.2
-   ```
-
-GitHub compila l'app e crea la release con `MD-Viewer.dmg` e `MD-Viewer.zip`
-(vedi `.github/workflows/release.yml`).
+GitHub compila l'app e allega alla release `MD-Viewer.dmg` e `MD-Viewer.zip` in qualche minuto
+(vedi `.github/workflows/release.yml`); se la descrizione è vuota, usa le novità del CHANGELOG.
 
 ## Licenza
 
