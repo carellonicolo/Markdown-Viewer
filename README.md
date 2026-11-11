@@ -117,11 +117,11 @@ Servono solo gli strumenti da riga di comando di Xcode (`xcode-select --install`
    `CFBundleVersion` di 1).
 2. Aggiungi in cima a `CHANGELOG.md` una sezione `## 2.2 — data` con le novità.
 3. Fai il commit e pubblicalo (Push).
-4. Su GitHub apri **Releases → Draft a new release**, in «Choose a tag» scrivi `v2.2` e scegli
-   «Create new tag», poi premi **Publish release** (la descrizione si può lasciare vuota).
+4. Su GitHub apri la scheda **Actions**, scegli **Release** a sinistra e premi
+   **Run workflow** → **Run workflow**.
 
-GitHub compila l'app e allega alla release `MD-Viewer.dmg` e `MD-Viewer.zip` in qualche minuto
-(vedi `.github/workflows/release.yml`); se la descrizione è vuota, usa le novità del CHANGELOG.
+In qualche minuto GitHub crea il tag `v2.2`, compila l'app e pubblica la release con
+`MD-Viewer.dmg`, `MD-Viewer.zip` e le novità del CHANGELOG (vedi `.github/workflows/release.yml`).
 
 ## Licenza
 
