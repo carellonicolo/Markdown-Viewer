@@ -461,39 +461,31 @@ final class FindBar: NSView, NSSearchFieldDelegate {
     }
 }
 
-// MARK: - Barra della vista HTML
+// MARK: - Intestazione dei pannelli
 
-final class SourceBar: NSView {
-    private let label = NSTextField(labelWithString: "")
-    private let copyButton = NSButton()
-    private var restoreWork: DispatchWorkItem?
-    var onCopy: (() -> Void)?
-    var onExport: (() -> Void)?
+/// Intestazione di un pannello (Markdown, Anteprima, HTML): simbolo, nome, un'informazione utile
+/// ed eventuali pulsanti. Stesso stile della barra di ricerca.
+final class PaneHeader: NSView {
+    private let detail = NSTextField(labelWithString: "")
+    private let stack = NSStackView()
 
-    override init(frame: NSRect) {
-        super.init(frame: frame)
-        let icon = NSImageView(image: NSImage(systemSymbolName: "chevron.left.forwardslash.chevron.right",
-                                              accessibilityDescription: nil)!)
+    init(symbol: String, title: String) {
+        super.init(frame: .zero)
+        let icon = NSImageView(image: NSImage(systemSymbolName: symbol, accessibilityDescription: nil)!)
         icon.contentTintColor = .secondaryLabelColor
-        label.textColor = .secondaryLabelColor
-        label.font = .systemFont(ofSize: NSFont.smallSystemFontSize)
-        label.lineBreakMode = .byTruncatingTail
-        label.setContentHuggingPriority(.defaultLow, for: .horizontal)
-        label.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        icon.symbolConfiguration = .init(pointSize: NSFont.smallSystemFontSize, weight: .medium)
+        let name = NSTextField(labelWithString: title)
+        name.font = .systemFont(ofSize: NSFont.smallSystemFontSize, weight: .semibold)
+        name.textColor = .secondaryLabelColor
+        detail.font = .systemFont(ofSize: NSFont.smallSystemFontSize)
+        detail.textColor = .tertiaryLabelColor
+        detail.lineBreakMode = .byTruncatingTail
+        detail.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        detail.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
 
-        copyButton.bezelStyle = .accessoryBarAction
-        copyButton.imagePosition = .imageLeading
-        copyButton.target = self
-        copyButton.action = #selector(copyClicked)
-        copyButton.toolTip = "Copia negli appunti il codice HTML del documento"
-        setCopied(false)
-        let export = NSButton(title: "Esporta…", target: self, action: #selector(exportClicked))
-        export.bezelStyle = .accessoryBarAction
-        export.toolTip = "Salva come pagina HTML completa, con stile e immagini (⇧⌘H)"
-
-        let stack = NSStackView(views: [icon, label, copyButton, export])
+        stack.setViews([icon, name, detail], in: .leading)
         stack.spacing = 6
-        stack.edgeInsets = NSEdgeInsets(top: 6, left: 12, bottom: 6, right: 10)
+        stack.edgeInsets = NSEdgeInsets(top: 5, left: 12, bottom: 5, right: 8)
         stack.translatesAutoresizingMaskIntoConstraints = false
         addSubview(stack)
 
@@ -507,6 +499,7 @@ final class SourceBar: NSView {
             stack.trailingAnchor.constraint(equalTo: trailingAnchor),
             stack.topAnchor.constraint(equalTo: topAnchor),
             stack.bottomAnchor.constraint(equalTo: separator.topAnchor),
+            stack.heightAnchor.constraint(greaterThanOrEqualToConstant: 28),
             separator.leadingAnchor.constraint(equalTo: leadingAnchor),
             separator.trailingAnchor.constraint(equalTo: trailingAnchor),
             separator.bottomAnchor.constraint(equalTo: bottomAnchor),
@@ -515,11 +508,31 @@ final class SourceBar: NSView {
 
     required init?(coder: NSCoder) { fatalError() }
 
-    func setLineCount(_ lines: Int) {
-        label.stringValue = "Codice HTML del documento · \(lines) \(lines == 1 ? "riga" : "righe")"
+    func setDetail(_ text: String) { detail.stringValue = text }
+
+    /// Pulsanti allineati a destra.
+    func addButtons(_ buttons: [NSButton]) {
+        for button in buttons {
+            button.bezelStyle = .accessoryBarAction
+            button.controlSize = .small
+            stack.addView(button, in: .trailing)
+        }
+    }
+}
+
+/// Pulsante "Copia HTML" che per un momento diventa "Copiato ✓".
+final class CopyButton: NSButton {
+    private var restoreWork: DispatchWorkItem?
+
+    convenience init(target: AnyObject?, action: Selector) {
+        self.init(frame: .zero)
+        self.target = target
+        self.action = action
+        imagePosition = .imageLeading
+        toolTip = "Copia negli appunti il codice HTML del documento"
+        setCopied(false)
     }
 
-    /// Conferma visiva della copia, per un momento.
     func showCopied() {
         setCopied(true)
         restoreWork?.cancel()
@@ -529,50 +542,64 @@ final class SourceBar: NSView {
     }
 
     private func setCopied(_ copied: Bool) {
-        copyButton.title = copied ? "Copiato" : "Copia HTML"
-        copyButton.image = NSImage(systemSymbolName: copied ? "checkmark" : "doc.on.doc",
-                                   accessibilityDescription: nil)
+        title = copied ? "Copiato" : "Copia HTML"
+        image = NSImage(systemSymbolName: copied ? "checkmark" : "doc.on.doc", accessibilityDescription: nil)
     }
-
-    @objc private func copyClicked() { onCopy?() }
-    @objc private func exportClicked() { onExport?() }
 }
 
 // MARK: - Finestra
 
 final class ViewerWindowController: NSWindowController, WKNavigationDelegate, WKUIDelegate,
                                     NSWindowDelegate, NSMenuItemValidation, NSTextViewDelegate {
+    /// I pannelli affiancati, sempre in quest'ordine: testo Markdown, anteprima, codice HTML.
+    struct Panes: OptionSet {
+        let rawValue: Int
+        static let markdown = Panes(rawValue: 1 << 0)
+        static let preview = Panes(rawValue: 1 << 1)
+        static let html = Panes(rawValue: 1 << 2)
+        static let all: [Panes] = [.markdown, .preview, .html]
+        var count: Int { Self.all.filter { contains($0) }.count }
+    }
+
     private let webView: WKWebView
     private let findBar = FindBar()
     private let toc = TOCViewController()
     private let tocItem: NSSplitViewItem
-    // Editor affiancato all'anteprima: nascosto finché non si preme "Modifica".
+    private let split = NSSplitViewController()
+    private var panes: Panes = .preview // si apre sempre in lettura
+    private weak var panesItem: NSToolbarItemGroup?
+    /// Cornice della finestra prima che venisse allargata per più pannelli, e quella allargata.
+    private var frameBeforeWidening: (original: NSRect, widened: NSRect)?
+
+    // Pannello Markdown: il testo, da modificare (o solo da leggere, per i file di sola lettura).
     private let editor: NSTextView
-    private let editorItem: NSSplitViewItem
+    private let markdownItem: NSSplitViewItem
+    private let markdownHeader = PaneHeader(symbol: "square.and.pencil", title: "Markdown")
     private var editorRenderWork: DispatchWorkItem?
-    /// Cornice della finestra prima che venisse allargata per l'editor, e quella allargata.
-    private var frameBeforeEditor: (original: NSRect, widened: NSRect)?
-    private var isEditing: Bool { !editorItem.isCollapsed }
+    /// Durante uno scorrimento dell'editor fatto dall'app (indice) gli altri pannelli non lo seguono.
+    private var suppressScrollSync = false
+
+    // Pannello Anteprima.
+    private let previewItem: NSSplitViewItem
+    private let previewColumn: NSStackView
+    private let previewHeader = PaneHeader(symbol: "doc.richtext", title: "Anteprima")
     private var watchTimer: Timer?
     private var pendingScrollY: Double?
     private var lastScrollY: Double = 0
     private var allowsScripts = false
 
-    // Vista "HTML": il codice generato, in una seconda WebView sopra l'anteprima (creata solo se serve).
-    // L'anteprima resta caricata sotto: stampa, PDF ed esportazione continuano a usarla.
-    private let column: NSStackView
-    private let sourceBar = SourceBar()
+    // Pannello HTML: il codice generato, in una seconda WebView (creata solo la prima volta che serve).
+    private let htmlItem: NSSplitViewItem
+    private let htmlColumn: NSStackView
+    private let htmlHeader = PaneHeader(symbol: "chevron.left.forwardslash.chevron.right", title: "HTML")
+    private let copyButton = CopyButton(target: nil, action: #selector(ViewerWindowController.copyHTML(_:)))
     private var sourceView: WKWebView?
     private var sourceLoaded = false
     private var sourceGeneration = 0
-    private var showsSource = false
-    private weak var viewModeItem: NSToolbarItemGroup?
     /// L'HTML prodotto dall'ultima conversione (quello che "Copia HTML" mette negli appunti).
     private var htmlFragment = ""
-    /// La WebView visibile: l'anteprima o il codice HTML.
-    private var activeWebView: WKWebView { showsSource ? (sourceView ?? webView) : webView }
 
-    /// La pagina attualmente caricata nella WebView.
+    /// La pagina attualmente caricata nell'anteprima.
     private struct LoadedPage {
         let path: String
         let math: Bool
@@ -587,6 +614,25 @@ final class ViewerWindowController: NSWindowController, WKNavigationDelegate, WK
     private static let showTOCKey = "ShowTOC"
 
     private var markdownDocument: MarkdownDocument? { document as? MarkdownDocument }
+
+    /// Colonna verticale di un pannello: intestazione in alto, contenuto sotto.
+    private static func column(_ views: [NSView]) -> NSStackView {
+        let column = NSStackView(views: views)
+        column.orientation = .vertical
+        column.spacing = 0
+        column.alignment = .width
+        column.frame = NSRect(x: 0, y: 0, width: 600, height: 920)
+        views.last?.setContentHuggingPriority(.defaultLow - 1, for: .vertical) // il contenuto occupa lo spazio
+        return column
+    }
+
+    private static func paneItem(_ view: NSView) -> NSSplitViewItem {
+        let controller = NSViewController()
+        controller.view = view
+        let item = NSSplitViewItem(viewController: controller)
+        item.minimumThickness = 240
+        return item
+    }
 
     init() {
         let config = WKWebViewConfiguration()
@@ -626,28 +672,18 @@ final class ViewerWindowController: NSWindowController, WKNavigationDelegate, WK
         editorScroll.verticalRulerView = LineNumberRuler(textView: editor)
         editorScroll.hasVerticalRuler = true
         editorScroll.rulersVisible = true
-        let editorController = NSViewController()
-        editorController.view = editorScroll
-        editorItem = NSSplitViewItem(viewController: editorController)
-        editorItem.minimumThickness = 240
-        editorItem.canCollapse = true
-        editorItem.isCollapsed = true
+        markdownItem = Self.paneItem(Self.column([markdownHeader, editorScroll]))
 
         findBar.isHidden = true
-        sourceBar.isHidden = true
-        column = NSStackView(views: [findBar, sourceBar, webView])
-        column.orientation = .vertical
-        column.spacing = 0
-        column.alignment = .width
-        column.frame = webView.frame
-        let content = NSViewController()
-        content.view = column
-        let contentItem = NSSplitViewItem(viewController: content)
-        contentItem.minimumThickness = 240
-        let split = NSSplitViewController()
+        previewHeader.isHidden = true // da sola, l'anteprima non ha intestazione: solo il documento
+        previewColumn = Self.column([previewHeader, findBar, webView])
+        previewItem = Self.paneItem(previewColumn)
+
+        htmlColumn = Self.column([htmlHeader])
+        htmlItem = Self.paneItem(htmlColumn)
+
         split.addSplitViewItem(tocItem)
-        split.addSplitViewItem(editorItem)
-        split.addSplitViewItem(contentItem)
+        split.addSplitViewItem(previewItem)
 
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 860, height: 920),
@@ -660,7 +696,7 @@ final class ViewerWindowController: NSWindowController, WKNavigationDelegate, WK
 
         window.delegate = self
         // Nome nuovo a ogni cambio dei pulsanti predefiniti: una disposizione salvata li nasconderebbe.
-        let toolbar = NSToolbar(identifier: "MDViewerToolbar3")
+        let toolbar = NSToolbar(identifier: "MDViewerToolbar4")
         toolbar.delegate = self
         toolbar.displayMode = .iconOnly
         toolbar.allowsUserCustomization = true
@@ -677,8 +713,10 @@ final class ViewerWindowController: NSWindowController, WKNavigationDelegate, WK
         toc.onSelect = { [weak self] heading in self?.scroll(to: heading) }
         findBar.onSearch = { [weak self] text, backwards in self?.find(text, backwards: backwards) }
         findBar.onClose = { [weak self] in self?.hideFindBar() }
-        sourceBar.onCopy = { [weak self] in self?.copyHTML(nil) }
-        sourceBar.onExport = { [weak self] in self?.exportHTML(nil) }
+        copyButton.target = self
+        let export = NSButton(title: "Esporta…", target: self, action: #selector(exportHTML(_:)))
+        export.toolTip = "Salva come pagina HTML completa, con stile e immagini (⇧⌘H)"
+        htmlHeader.addButtons([copyButton, export])
         editor.delegate = self
         editorScroll.contentView.postsBoundsChangedNotifications = true
         NotificationCenter.default.addObserver(self, selector: #selector(editorDidScroll),
@@ -719,8 +757,8 @@ final class ViewerWindowController: NSWindowController, WKNavigationDelegate, WK
     }
 
     func windowDidEndLiveResize(_ notification: Notification) {
-        // Con l'editor aperto la finestra è più larga del solito: non diventa la nuova dimensione predefinita.
-        guard let window, !isEditing else { return }
+        // Con più pannelli la finestra è più larga del solito: non diventa la nuova dimensione predefinita.
+        guard let window, panes.count == 1 else { return }
         UserDefaults.standard.set(NSStringFromSize(window.frame.size), forKey: Self.windowSizeKey)
     }
 
@@ -729,6 +767,8 @@ final class ViewerWindowController: NSWindowController, WKNavigationDelegate, WK
         didSet {
             guard let doc = markdownDocument, let url = doc.fileURL else { return }
             editor.string = doc.markdown
+            editor.isEditable = !doc.isReadOnly
+            updateMarkdownHeader()
             render(restoring: ScrollMemory.position(for: url) ?? 0)
         }
     }
@@ -761,7 +801,7 @@ final class ViewerWindowController: NSWindowController, WKNavigationDelegate, WK
                       reloadPage: Bool, generation: Int) {
         toc.headings = rendered.headings
         htmlFragment = rendered.html
-        if showsSource { updateSource() }
+        if panes.contains(.html) { updateSource() }
         if let y {
             load(html, rendered: rendered, fileURL: fileURL, scrollTo: y)
             return
@@ -780,7 +820,8 @@ final class ViewerWindowController: NSWindowController, WKNavigationDelegate, WK
                 }
                 if page.mermaid && rendered.mermaid { self.redrawDiagrams() }
                 self.updateFindCount()
-                if self.isEditing { self.syncPreviewScroll() }
+                self.updateWordCount()
+                self.syncPanesToEditor()
             }
             return
         }
@@ -816,7 +857,7 @@ final class ViewerWindowController: NSWindowController, WKNavigationDelegate, WK
                                            in: nil, in: .defaultClient, completionHandler: nil)
         } else {
             sourceLoaded = false // la pagina del codice verrà ricreata con il tema nuovo
-            if showsSource { updateSource() }
+            if panes.contains(.html) { updateSource() }
         }
         if webView.isLoading {
             render() // la pagina in arrivo potrebbe avere ancora il tema precedente
@@ -827,38 +868,126 @@ final class ViewerWindowController: NSWindowController, WKNavigationDelegate, WK
                                     in: nil, in: .defaultClient, completionHandler: nil)
     }
 
-    // Nella vista HTML porta alla riga del codice in cui inizia il titolo.
+    /// Dall'indice: ogni pannello aperto va al titolo. Nell'anteprima il titolo, nel codice HTML la riga
+    /// in cui inizia, nel testo Markdown la riga del titolo (con il cursore lì, pronto per scrivere).
     private func scroll(to heading: Heading) {
-        activeWebView.callAsyncJavaScript("document.getElementById(id)?.scrollIntoView({behavior: 'smooth'})",
-                                          arguments: ["id": (showsSource ? "src-" : "") + heading.id],
-                                          in: nil, in: .defaultClient, completionHandler: nil)
+        let script = "document.getElementById(id)?.scrollIntoView({behavior: 'smooth'})"
+        if panes.contains(.preview) {
+            webView.callAsyncJavaScript(script, arguments: ["id": heading.id], in: nil, in: .defaultClient,
+                                        completionHandler: nil)
+        }
+        if panes.contains(.html), let sourceView {
+            sourceView.callAsyncJavaScript(script, arguments: ["id": "src-" + heading.id], in: nil,
+                                           in: .defaultClient, completionHandler: nil)
+        }
+        if panes.contains(.markdown), let offset = heading.offset { scrollEditor(to: offset) }
     }
 
-    // MARK: Vista HTML
+    private func scrollEditor(to offset: Int) {
+        guard let layout = editor.layoutManager, offset < (editor.string as NSString).length else { return }
+        layout.ensureLayout(forCharacterRange: NSRange(location: 0, length: offset + 1))
+        let line = layout.lineFragmentRect(forGlyphAt: layout.glyphIndexForCharacter(at: offset), effectiveRange: nil)
+        editor.setSelectedRange(NSRange(location: offset, length: 0))
+        suppressScrollSync = true
+        editor.scroll(NSPoint(x: 0, y: max(0, line.minY + editor.textContainerOrigin.y - 8)))
+        suppressScrollSync = false
+    }
 
-    @objc func toggleHTMLSource(_ sender: Any?) { setShowsSource(!showsSource) }
+    // MARK: Pannelli (Markdown · Anteprima · HTML)
 
-    @objc func viewModeClicked(_ sender: NSToolbarItemGroup) { setShowsSource(sender.selectedIndex == 1) }
+    @objc func toggleMarkdownPane(_ sender: Any?) { setPanes(panes.symmetricDifference(.markdown)) }
+    @objc func togglePreviewPane(_ sender: Any?) { setPanes(panes.symmetricDifference(.preview)) }
+    @objc func toggleHTMLPane(_ sender: Any?) { setPanes(panes.symmetricDifference(.html)) }
 
-    private func setShowsSource(_ show: Bool) {
-        viewModeItem?.selectedIndex = show ? 1 : 0
-        guard show != showsSource else { return }
-        // La tastiera (scorrimento, ⌘A, ⌘C) segue la vista visibile, se era su una delle due.
-        let responder = window?.firstResponder as? NSView
-        let focusWasOnPage = responder.map { r in [webView, sourceView].contains { $0 != nil && r.isDescendant(of: $0!) } } ?? false
-        showsSource = show
-        if show && sourceView == nil { sourceView = makeSourceView() }
-        sourceView?.isHidden = !show
-        sourceBar.isHidden = !show
-        if show { updateSource() }
-        if focusWasOnPage { window?.makeFirstResponder(activeWebView) }
-        if !findBar.isHidden { find(findBar.field.stringValue, backwards: false) }
+    @objc func panesClicked(_ sender: NSToolbarItemGroup) {
+        var chosen: Panes = []
+        for (index, pane) in Panes.all.enumerated() where sender.isSelected(at: index) { chosen.insert(pane) }
+        setPanes(chosen)
+    }
+
+    private func syncPanesItem() {
+        guard let group = panesItem else { return }
+        for (index, pane) in Panes.all.enumerated() { group.setSelected(panes.contains(pane), at: index) }
+    }
+
+    /// Mostra i pannelli scelti, nell'ordine fisso, divisi in parti uguali; almeno uno resta sempre aperto.
+    private func setPanes(_ wanted: Panes) {
+        guard let window, !wanted.isEmpty, wanted != panes else { return syncPanesItem() }
+        let added = wanted.subtracting(panes)
+        let responder = window.firstResponder as? NSView
+        if added.contains(.markdown), let doc = markdownDocument, editor.string != doc.markdown {
+            editor.string = doc.markdown
+            doc.undoManager?.removeAllActions()
+        }
+        if added.contains(.html), sourceView == nil { sourceView = makeSourceView() }
+        panes = wanted
+        syncPanesItem()
+
+        if wanted.count > 1 { widenWindow(forPanes: wanted.count) }
+        let order: [(Panes, NSSplitViewItem)] = [(.markdown, markdownItem), (.preview, previewItem), (.html, htmlItem)]
+        for (pane, item) in order where !wanted.contains(pane) && split.splitViewItems.contains(item) {
+            split.removeSplitViewItem(item)
+        }
+        for (index, entry) in order.filter({ wanted.contains($0.0) }).enumerated()
+        where !split.splitViewItems.contains(entry.1) {
+            split.insertSplitViewItem(entry.1, at: 1 + index) // dopo l'indice dei titoli
+        }
+        if wanted.count == 1 { restoreWindowWidth() }
+        previewHeader.isHidden = wanted == .preview
+        distributePanes()
+
+        if added.contains(.html) { updateSource() }
+        if added.contains(.preview) || added.contains(.markdown) { updateWordCount() }
+        relocateFindBar()
+        // La tastiera va nel pannello appena aperto se è il Markdown (per scrivere subito),
+        // altrimenti resta dov'era, se quel pannello c'è ancora.
+        if added.contains(.markdown) {
+            window.makeFirstResponder(editor)
+        } else if responder == nil || responder?.window == nil {
+            window.makeFirstResponder(wanted.contains(.preview) ? webView : wanted.contains(.markdown) ? editor : sourceView)
+        }
+        syncPanesToEditor()
+    }
+
+    /// Allarga la finestra perché ogni pannello abbia spazio, senza uscire dallo schermo.
+    private func widenWindow(forPanes count: Int) {
+        guard let window, !window.styleMask.contains(.fullScreen), let screen = window.screen?.visibleFrame else { return }
+        let tocWidth = tocItem.isCollapsed ? 0 : tocItem.viewController.view.frame.width
+        let wanted = min(screen.width, max(window.frame.width, CGFloat(count) * 600 + tocWidth))
+        guard wanted > window.frame.width else { return }
+        var frame = window.frame
+        frame.size.width = wanted
+        frame.origin.x = max(screen.minX, min(frame.minX, screen.maxX - wanted))
+        frameBeforeWidening = (frameBeforeWidening?.original ?? window.frame, frame)
+        window.setFrame(frame, display: true, animate: true)
+    }
+
+    /// Con un solo pannello la finestra torna com'era, se nel frattempo non è stata ridimensionata.
+    private func restoreWindowWidth() {
+        if let window, let frames = frameBeforeWidening, window.frame == frames.widened {
+            window.setFrame(frames.original, display: true, animate: true)
+        }
+        frameBeforeWidening = nil
+    }
+
+    private func distributePanes() {
+        let items = split.splitViewItems.filter { $0 !== tocItem }
+        guard items.count > 1 else { return }
+        let splitView = split.splitView
+        splitView.layoutSubtreeIfNeeded()
+        let start = items[0].viewController.view.frame.minX
+        let gap = splitView.dividerThickness
+        let width = (splitView.bounds.maxX - start - gap * CGFloat(items.count - 1)) / CGFloat(items.count)
+        // Il divisore k separa l'elemento k dal k+1 (l'elemento 0 è l'indice dei titoli).
+        for k in 1..<items.count {
+            splitView.setPosition(start + CGFloat(k) * width + CGFloat(k - 1) * gap, ofDividerAt: k)
+        }
     }
 
     private func makeSourceView() -> WKWebView {
         let config = WKWebViewConfiguration()
         config.defaultWebpagePreferences.allowsContentJavaScript = false
-        let view = WKWebView(frame: webView.frame, configuration: config)
+        let view = WKWebView(frame: NSRect(x: 0, y: 0, width: 600, height: 900), configuration: config)
         if view.responds(to: NSSelectorFromString("setDrawsBackground:")) {
             view.setValue(false, forKey: "drawsBackground")
         }
@@ -866,15 +995,8 @@ final class ViewerWindowController: NSWindowController, WKNavigationDelegate, WK
         view.allowsMagnification = true
         view.navigationDelegate = self
         view.uiDelegate = self
-        // Sovrapposta esattamente all'anteprima, che resta caricata sotto.
-        view.translatesAutoresizingMaskIntoConstraints = false
-        column.addSubview(view)
-        NSLayoutConstraint.activate([
-            view.leadingAnchor.constraint(equalTo: webView.leadingAnchor),
-            view.trailingAnchor.constraint(equalTo: webView.trailingAnchor),
-            view.topAnchor.constraint(equalTo: webView.topAnchor),
-            view.bottomAnchor.constraint(equalTo: webView.bottomAnchor),
-        ])
+        view.setContentHuggingPriority(.defaultLow - 1, for: .vertical)
+        htmlColumn.addArrangedSubview(view)
         sourceLoaded = false
         return view
     }
@@ -887,7 +1009,8 @@ final class ViewerWindowController: NSWindowController, WKNavigationDelegate, WK
         let generation = sourceGeneration
         let fragment = htmlFragment
         let theme = Theme.current.rawValue
-        sourceBar.setLineCount(fragment.utf8.reduce(0) { $1 == 10 ? $0 + 1 : $0 })
+        let lines = fragment.utf8.reduce(0) { $1 == 10 ? $0 + 1 : $0 }
+        htmlHeader.setDetail("\(lines) \(lines == 1 ? "riga" : "righe")")
         Self.renderQueue.async { [weak self] in
             let renderer = MarkdownRenderer.shared
             let code = "<pre class=\"html-source\"><code>\(renderer.highlightedSource(fragment))</code></pre>"
@@ -897,6 +1020,7 @@ final class ViewerWindowController: NSWindowController, WKNavigationDelegate, WK
                     view.callAsyncJavaScript("document.querySelector('article.markdown-body').innerHTML = html",
                                              arguments: ["html": code], in: nil, in: .defaultClient) { [weak self] _ in
                         self?.updateFindCount()
+                        self?.syncPanesToEditor()
                     }
                 } else {
                     self.sourceLoaded = true
@@ -911,7 +1035,32 @@ final class ViewerWindowController: NSWindowController, WKNavigationDelegate, WK
     @objc func copyHTML(_ sender: Any?) {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(htmlFragment, forType: .string)
-        sourceBar.showCopied()
+        copyButton.showCopied()
+    }
+
+    private func updateMarkdownHeader() {
+        let lines = editor.string.utf16.reduce(1) { $1 == 10 ? $0 + 1 : $0 }
+        let readOnly = markdownDocument?.isReadOnly == true ? " · sola lettura" : ""
+        markdownHeader.setDetail("\(lines) \(lines == 1 ? "riga" : "righe")\(readOnly)")
+    }
+
+    // Parole del testo (senza codice, formule e diagrammi) e tempo di lettura, nell'intestazione dell'anteprima.
+    private static let wordCountScript = """
+        const art = document.querySelector('article.markdown-body');
+        if (!art) return 0;
+        const copy = art.cloneNode(true);
+        copy.querySelectorAll('pre, .katex, .math-block, svg').forEach(e => e.remove());
+        return copy.textContent.split(/\\s+/).filter(w => /[\\p{L}\\p{N}]/u.test(w)).length;
+        """
+
+    private func updateWordCount() {
+        guard !previewHeader.isHidden else { return }
+        webView.callAsyncJavaScript(Self.wordCountScript, arguments: [:], in: nil, in: .defaultClient) { [weak self] result in
+            guard case .success(let value) = result, let words = value as? Int else { return }
+            let number = NumberFormatter.localizedString(from: NSNumber(value: words), number: .decimal)
+            let minutes = max(1, Int((Double(words) / 200).rounded(.up)))
+            self?.previewHeader.setDetail("\(number) \(words == 1 ? "parola" : "parole") · \(minutes) min di lettura")
+        }
     }
 
     // Ogni secondo: ricarica se il file è cambiato o è stato rinominato, e salva la posizione di lettura.
@@ -924,7 +1073,7 @@ final class ViewerWindowController: NSWindowController, WKNavigationDelegate, WK
                 if !doc.isDocumentEdited { self.reloadFromDisk() }
             } else if let page = self.loadedPage, page.path != url.path {
                 self.render() // file spostato o rinominato: aggiorna immagini e link relativi
-            } else if self.pendingScrollY == nil {
+            } else if self.pendingScrollY == nil, self.panes.contains(.preview) {
                 self.webView.evaluateJavaScript("window.scrollY") { [weak self] result, _ in
                     // Salvata subito (non solo alla chiusura), così resta anche uscendo con ⌘Q.
                     guard let self, self.pendingScrollY == nil, let y = result as? Double,
@@ -945,13 +1094,12 @@ final class ViewerWindowController: NSWindowController, WKNavigationDelegate, WK
     // MARK: Azioni di menu
 
     func validateMenuItem(_ item: NSMenuItem) -> Bool {
-        if item.action == #selector(toggleTOC(_:)) {
-            item.state = tocItem.isCollapsed ? .off : .on
-        } else if item.action == #selector(toggleEditor(_:)) {
-            item.state = isEditing ? .on : .off
-            return markdownDocument?.isReadOnly == false
-        } else if item.action == #selector(toggleHTMLSource(_:)) {
-            item.state = showsSource ? .on : .off
+        switch item.action {
+        case #selector(toggleTOC(_:)): item.state = tocItem.isCollapsed ? .off : .on
+        case #selector(toggleMarkdownPane(_:)): item.state = panes.contains(.markdown) ? .on : .off
+        case #selector(togglePreviewPane(_:)): item.state = panes.contains(.preview) ? .on : .off
+        case #selector(toggleHTMLPane(_:)): item.state = panes.contains(.html) ? .on : .off
+        default: break
         }
         return true
     }
@@ -978,74 +1126,41 @@ final class ViewerWindowController: NSWindowController, WKNavigationDelegate, WK
             let length = (doc.markdown as NSString).length
             editor.setSelectedRange(NSRange(location: min(selection.location, length), length: 0))
             doc.undoManager?.removeAllActions() // le azioni da annullare si riferivano al testo precedente
+            updateMarkdownHeader()
         }
         render()
     }
 
     // MARK: Editor
 
-    @objc func toggleEditor(_ sender: Any?) {
-        guard let window, let doc = markdownDocument else { return }
-        if isEditing {
-            editorItem.isCollapsed = true
-            // Torna alla larghezza di prima, se nel frattempo la finestra non è stata ridimensionata.
-            if let frames = frameBeforeEditor, window.frame == frames.widened {
-                window.setFrame(frames.original, display: true, animate: true)
-            }
-            frameBeforeEditor = nil
-            window.makeFirstResponder(webView)
-            return
-        }
-        guard !doc.isReadOnly else { return NSSound.beep() }
-        if editor.string != doc.markdown {
-            editor.string = doc.markdown
-            doc.undoManager?.removeAllActions()
-        }
-        // Allarga la finestra per far stare editor e anteprima, senza uscire dallo schermo.
-        if !window.styleMask.contains(.fullScreen), let screen = window.screen?.visibleFrame {
-            let wanted = min(screen.width, max(window.frame.width,
-                                               1200 + (tocItem.isCollapsed ? 0 : tocItem.viewController.view.frame.width)))
-            if wanted > window.frame.width {
-                var frame = window.frame
-                frame.size.width = wanted
-                frame.origin.x = max(screen.minX, min(frame.minX, screen.maxX - wanted))
-                frameBeforeEditor = (window.frame, frame)
-                window.setFrame(frame, display: true, animate: true)
-            }
-        }
-        editorItem.isCollapsed = false
-        // Editor e anteprima a metà.
-        if let split = window.contentViewController as? NSSplitViewController {
-            split.splitView.layoutSubtreeIfNeeded()
-            let start = editorItem.viewController.view.frame.minX
-            let end = split.splitView.bounds.maxX
-            split.splitView.setPosition(start + (end - start) / 2, ofDividerAt: 1)
-        }
-        window.makeFirstResponder(editor)
-        syncPreviewScroll()
-    }
-
-    // Anteprima aggiornata mentre si scrive: aspetta una breve pausa nella digitazione.
+    // Anteprima e HTML aggiornati mentre si scrive: aspettano una breve pausa nella digitazione.
     func textDidChange(_ notification: Notification) {
         markdownDocument?.markdown = editor.string
         editorRenderWork?.cancel()
-        let work = DispatchWorkItem { [weak self] in self?.render() }
+        let work = DispatchWorkItem { [weak self] in
+            self?.render()
+            self?.updateMarkdownHeader()
+        }
         editorRenderWork = work
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.15, execute: work)
     }
 
-    @objc private func editorDidScroll() {
-        if isEditing { syncPreviewScroll() }
-    }
+    @objc private func editorDidScroll() { syncPanesToEditor() }
 
-    /// Porta l'anteprima allo stesso punto (in proporzione) dell'editor.
-    private func syncPreviewScroll() {
-        guard let scroll = editor.enclosingScrollView, pendingScrollY == nil else { return }
+    /// Porta anteprima e codice HTML allo stesso punto (in proporzione) del testo Markdown.
+    private func syncPanesToEditor() {
+        guard panes.contains(.markdown), !suppressScrollSync, let scroll = editor.enclosingScrollView else { return }
         let range = editor.frame.height - scroll.contentView.bounds.height
         let fraction = range > 0 ? min(max(scroll.contentView.bounds.minY / range, 0), 1) : 0
-        activeWebView.callAsyncJavaScript(
-            "window.scrollTo(0, f * (document.documentElement.scrollHeight - window.innerHeight))",
-            arguments: ["f": fraction], in: nil, in: .defaultClient, completionHandler: nil)
+        let script = "window.scrollTo(0, f * (document.documentElement.scrollHeight - window.innerHeight))"
+        if panes.contains(.preview), pendingScrollY == nil {
+            webView.callAsyncJavaScript(script, arguments: ["f": fraction], in: nil, in: .defaultClient,
+                                        completionHandler: nil)
+        }
+        if panes.contains(.html), let sourceView {
+            sourceView.callAsyncJavaScript(script, arguments: ["f": fraction], in: nil, in: .defaultClient,
+                                           completionHandler: nil)
+        }
     }
 
     @objc func toggleTOC(_ sender: Any?) {
@@ -1056,9 +1171,14 @@ final class ViewerWindowController: NSWindowController, WKNavigationDelegate, WK
 
     // MARK: Ricerca
 
-    /// Se si sta scrivendo nell'editor, ⌘F e ⌘G cercano nel testo dell'editor.
+    /// La pagina in cui cerca la barra di ricerca: quella del pannello in cui si trova la barra.
+    private var findTarget: WKWebView {
+        findBar.superview === htmlColumn ? (sourceView ?? webView) : webView
+    }
+
+    /// Se si sta scrivendo nel testo Markdown, ⌘F e ⌘G cercano lì.
     private func editorFind(_ action: NSTextFinder.Action) -> Bool {
-        guard isEditing, window?.firstResponder === editor else { return false }
+        guard panes.contains(.markdown), window?.firstResponder === editor else { return false }
         let item = NSMenuItem()
         item.tag = action.rawValue
         editor.performTextFinderAction(item)
@@ -1067,15 +1187,53 @@ final class ViewerWindowController: NSWindowController, WKNavigationDelegate, WK
 
     @objc func showFindBar(_ sender: Any?) {
         if editorFind(.showFindInterface) { return }
+        // Cerca nell'HTML se è lì che si sta lavorando (o se l'anteprima non c'è), altrimenti nell'anteprima.
+        let responder = window?.firstResponder as? NSView
+        let workingInHTML = sourceView.map { responder?.isDescendant(of: $0) == true } ?? false
+        if panes.contains(.preview) && !(workingInHTML && panes.contains(.html)) {
+            placeFindBar(in: previewColumn)
+        } else if panes.contains(.html) {
+            placeFindBar(in: htmlColumn)
+        } else {
+            window?.makeFirstResponder(editor) // c'è solo il testo Markdown
+            _ = editorFind(.showFindInterface)
+            return
+        }
         findBar.isHidden = false
         window?.makeFirstResponder(findBar.field)
         findBar.field.selectText(nil)
+        updateFindCount()
+    }
+
+    /// La barra di ricerca sta sotto l'intestazione del pannello in cui cerca.
+    private func placeFindBar(in column: NSStackView) {
+        guard findBar.superview !== column else { return }
+        findBar.removeFromSuperview()
+        column.insertArrangedSubview(findBar, at: 1)
+        findBar.setCount(total: nil)
+    }
+
+    /// Se si chiude il pannello in cui si cercava, la ricerca passa all'altro (o si chiude).
+    private func relocateFindBar() {
+        guard !findBar.isHidden else { return }
+        let inHTML = findBar.superview === htmlColumn
+        if inHTML && !panes.contains(.html) || !inHTML && !panes.contains(.preview) {
+            if panes.contains(.preview) {
+                placeFindBar(in: previewColumn)
+            } else if panes.contains(.html) {
+                placeFindBar(in: htmlColumn)
+            } else {
+                return hideFindBar()
+            }
+            find(findBar.field.stringValue, backwards: false)
+        }
     }
 
     private func hideFindBar() {
+        let target = findTarget
         findBar.isHidden = true
         findBar.setCount(total: nil)
-        window?.makeFirstResponder(activeWebView)
+        if panes.contains(.preview) || panes.contains(.html) { window?.makeFirstResponder(target) }
     }
 
     @objc func toggleFindBar(_ sender: Any?) {
@@ -1103,7 +1261,7 @@ final class ViewerWindowController: NSWindowController, WKNavigationDelegate, WK
         config.backwards = backwards
         config.caseSensitive = false
         config.wraps = true
-        activeWebView.find(text, configuration: config) { [weak self] _ in self?.updateFindCount() }
+        findTarget.find(text, configuration: config) { [weak self] _ in self?.updateFindCount() }
     }
 
     // Conta le occorrenze (senza distinguere maiuscole/minuscole) e quante precedono
@@ -1127,8 +1285,8 @@ final class ViewerWindowController: NSWindowController, WKNavigationDelegate, WK
     private func updateFindCount() {
         let text = findBar.field.stringValue
         guard !findBar.isHidden, !text.isEmpty else { return }
-        activeWebView.callAsyncJavaScript(Self.findCountScript, arguments: ["query": text],
-                                    in: nil, in: .defaultClient) { [weak self] result in
+        findTarget.callAsyncJavaScript(Self.findCountScript, arguments: ["query": text],
+                                       in: nil, in: .defaultClient) { [weak self] result in
             guard case .success(let value) = result, let numbers = value as? [Int], numbers.count == 2 else { return }
             self?.findBar.setCount(current: numbers[0], total: numbers[1])
         }
@@ -1184,12 +1342,19 @@ final class ViewerWindowController: NSWindowController, WKNavigationDelegate, WK
         op.runModal(for: window, delegate: nil, didRun: nil, contextInfo: nil)
     }
 
+    /// Stampa e PDF riproducono l'anteprima: se non è tra i pannelli aperti, la si apre.
+    private func showPreviewForPrinting() {
+        if !panes.contains(.preview) { setPanes(panes.union(.preview)) }
+    }
+
     @objc func printContent(_ sender: Any?) {
+        showPreviewForPrinting()
         runPrint(makePrintInfo(), showPanel: true)
     }
 
     @objc func exportPDF(_ sender: Any?) {
         guard let window, let doc = markdownDocument else { return }
+        showPreviewForPrinting()
         let panel = NSSavePanel()
         panel.allowedContentTypes = [.pdf]
         panel.nameFieldStringValue = ((doc.fileURL?.lastPathComponent ?? doc.displayName) as NSString)
@@ -1251,9 +1416,10 @@ final class ViewerWindowController: NSWindowController, WKNavigationDelegate, WK
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         updateFindCount()
         guard webView === self.webView else { // la pagina del codice HTML
-            if isEditing { syncPreviewScroll() }
+            syncPanesToEditor()
             return
         }
+        updateWordCount()
         guard let y = pendingScrollY else { return }
         // Con i diagrammi, aspetta che siano disegnati (cambiano l'altezza della pagina).
         let waitForDiagrams = loadedPage?.mermaid == true ? "try { await window.mermaidReady; } catch (e) {}\n" : ""
@@ -1262,7 +1428,7 @@ final class ViewerWindowController: NSWindowController, WKNavigationDelegate, WK
             guard let self, self.pendingScrollY == y else { return }
             self.lastScrollY = y
             self.pendingScrollY = nil
-            if self.isEditing { self.syncPreviewScroll() }
+            self.syncPanesToEditor()
         }
     }
 
@@ -1395,8 +1561,7 @@ final class ViewerWindowController: NSWindowController, WKNavigationDelegate, WK
 
 extension NSToolbarItem.Identifier {
     static let toc = Self("toc")
-    static let edit = Self("edit")
-    static let viewMode = Self("viewMode")
+    static let panes = Self("panes")
     static let zoom = Self("zoom")
     static let theme = Self("theme")
     static let find = Self("find")
@@ -1406,7 +1571,7 @@ extension NSToolbarItem.Identifier {
 
 extension ViewerWindowController: NSToolbarDelegate {
     func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
-        [.toc, .flexibleSpace, .edit, .viewMode, .zoom, .theme, .find, .export, .more]
+        [.toc, .flexibleSpace, .panes, .zoom, .theme, .find, .export, .more]
     }
 
     func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
@@ -1438,19 +1603,21 @@ extension ViewerWindowController: NSToolbarDelegate {
         case .toc:
             return button("sidebar.left", "Indice", "Mostra/nascondi l'indice dei titoli (⌃⌘S)",
                           #selector(toggleTOC(_:)))
-        case .edit:
-            return button("square.and.pencil", "Modifica", "Mostra/nascondi l'editor accanto all'anteprima (⌘E)",
-                          #selector(toggleEditor(_:)))
-        case .viewMode:
+        case .panes:
+            // Un solo selettore per i tre pannelli: ognuno si accende e si spegne, anche tutti insieme.
             let group = NSToolbarItemGroup(
                 itemIdentifier: id,
-                images: [symbol("doc.richtext", "Anteprima"), symbol("chevron.left.forwardslash.chevron.right", "HTML")],
-                selectionMode: .selectOne, labels: ["Anteprima", "HTML"],
-                target: self, action: #selector(viewModeClicked(_:)))
+                images: [symbol("square.and.pencil", "Markdown"), symbol("doc.richtext", "Anteprima"),
+                         symbol("chevron.left.forwardslash.chevron.right", "HTML")],
+                selectionMode: .selectAny, labels: ["Markdown", "Anteprima", "HTML"],
+                target: self, action: #selector(panesClicked(_:)))
             group.label = "Vista"
-            group.toolTip = "Anteprima del documento o codice HTML generato (⌥⌘U)"
-            group.selectedIndex = showsSource ? 1 : 0
-            viewModeItem = group
+            group.toolTip = "Pannelli da affiancare: testo Markdown, anteprima, codice HTML"
+            let tips = ["Markdown: il testo, da scrivere (⌥⌘1)", "Anteprima: il documento formattato (⌥⌘2)",
+                        "HTML: il codice generato (⌥⌘3)"]
+            for (subitem, tip) in zip(group.subitems, tips) { subitem.toolTip = tip }
+            panesItem = group
+            syncPanesItem()
             return group
         case .find:
             return button("magnifyingglass", "Cerca", "Cerca nel documento (⌘F)", #selector(toggleFindBar(_:)))
@@ -1599,12 +1766,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         let credits = NSMutableAttributedString()
         credits.append(text("""
             Un visualizzatore Markdown semplice e veloce: apri un file .md e lo leggi formattato. \
-            Quando serve, premi Modifica per scriverlo con l'anteprima accanto, aggiornata mentre scrivi. \
+            Quando serve, affianca il testo Markdown da scrivere e il codice HTML generato, aggiornati mentre scrivi. \
             Si aggiorna da solo quando il file cambia e ricorda dove eri arrivato.
 
             """))
         credits.append(text("""
-            Editor con anteprima dal vivo · indice dei titoli · ricerca · tre temi · modalità scura · evidenziazione del codice · \
+            Markdown, anteprima e HTML affiancati · indice dei titoli · ricerca · tre temi · modalità scura · evidenziazione del codice · \
             formule matematiche · diagrammi Mermaid · esportazione PDF · anteprima Quick Look nel Finder
 
             """, color: .secondaryLabelColor))
@@ -1695,8 +1862,18 @@ func buildMainMenu() -> NSMenu {
 
     let view = submenu("Vista")
     add(view, "Mostra indice", #selector(ViewerWindowController.toggleTOC(_:)), "s", [.command, .control])
-    add(view, "Mostra editor", #selector(ViewerWindowController.toggleEditor(_:)), "e")
-    add(view, "Mostra codice HTML", #selector(ViewerWindowController.toggleHTMLSource(_:)), "u", [.command, .option])
+    view.addItem(.separator())
+    // I tre pannelli, come nel selettore "Vista" della barra in alto.
+    add(view, "Markdown", #selector(ViewerWindowController.toggleMarkdownPane(_:)), "1", [.command, .option])
+    add(view, "Anteprima", #selector(ViewerWindowController.togglePreviewPane(_:)), "2", [.command, .option])
+    add(view, "HTML", #selector(ViewerWindowController.toggleHTMLPane(_:)), "3", [.command, .option])
+    // Scorciatoie delle versioni precedenti: ⌘E (editor) e ⌥⌘U (codice HTML), nascoste ma attive.
+    for (key, mods, action) in [("e", NSEvent.ModifierFlags.command, #selector(ViewerWindowController.toggleMarkdownPane(_:))),
+                                ("u", [.command, .option], #selector(ViewerWindowController.toggleHTMLPane(_:)))] {
+        let alias = add(view, "", action, key, mods)
+        alias.isHidden = true
+        alias.allowsKeyEquivalentWhenHidden = true
+    }
     view.addItem(.separator())
     let themes = submenu("Tema", in: view)
     for (i, theme) in Theme.allCases.enumerated() {

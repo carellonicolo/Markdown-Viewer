@@ -1,19 +1,19 @@
 # MD Viewer
 
 Un visualizzatore Markdown per Mac, semplice e veloce: apri un file `.md` e lo leggi formattato.
-Quando serve, premi **Modifica** per scriverlo con l'anteprima accanto, aggiornata mentre scrivi.
+Quando serve, affianca il testo Markdown da scrivere e il codice HTML generato, aggiornati mentre scrivi.
 
 *A simple, fast Markdown viewer and editor for macOS (Italian interface). [English summary below.](#english)*
 
 ## Cosa fa
 
 - Mostra i file Markdown formattati e li aggiorna da soli quando il file cambia.
-- **Editor affiancato** (⌘E) con numeri di riga e anteprima dal vivo; ⌘S salva.
-- **Indice dei titoli** nella barra laterale, per spostarsi nei documenti lunghi.
+- **Tre pannelli da affiancare** con un solo selettore: **Markdown** (il testo da scrivere, con i numeri di riga),
+  **Anteprima** e **HTML** (il codice generato, da copiare con un clic). Si aggiornano mentre scrivi; ⌘S salva.
+- **Indice dei titoli** nella barra laterale: porta al titolo in tutti i pannelli aperti.
 - **Ricerca** nel documento (⌘F).
 - **Tre temi** di lettura (Standard, Libro, Compatto) e modalità scura automatica.
 - Codice colorato, **formule matematiche** (`$…$`, `$$…$$`) e **diagrammi** Mermaid.
-- **Vista HTML** (⌥⌘U): il codice HTML generato, colorato e con i numeri di riga, da copiare con un clic.
 - **Esporta in PDF o HTML** (una pagina unica con immagini, formule e diagrammi incorporati) e stampa.
 - **Anteprima nel Finder**: selezioni un file `.md` e premi la barra spaziatrice.
 - Ricorda dove eri arrivato a leggere in ogni file.
@@ -55,15 +55,15 @@ nel Finder. Puoi leggerlo prima di eseguirlo: è il file [`install.sh`](install.
   (Ottieni informazioni), in «Apri con» scegli **MD Viewer** e premi **Modifica tutto…**.
 - **Anteprima con la barra spaziatrice**: se nel Finder non appare formattata, attivala in
   **Impostazioni di Sistema → Generali → Elementi login ed estensioni → Quick Look → MD Viewer**.
-- **Modificare un file**: premi il pulsante **Modifica** (la matita) nella barra in alto.
+- **Modificare un file**: nel selettore **Vista** in alto premi **Markdown** (la matita). Accanto c'è
+  **Anteprima**, e con **HTML** vedi anche il codice: puoi tenerne aperti uno, due o tutti e tre.
 
 ### Scorciatoie da tastiera
 
 | Tasti | Azione |
 |---|---|
 | ⌘O | Apri un file |
-| ⌘E | Mostra/nascondi l'editor |
-| ⌥⌘U | Anteprima / codice HTML |
+| ⌥⌘1 · ⌥⌘2 · ⌥⌘3 | Pannello Markdown · Anteprima · HTML (anche ⌘E e ⌥⌘U) |
 | ⌘S | Salva |
 | ⌘F · ⌘G · ⇧⌘G | Cerca · successivo · precedente |
 | ⌃⌘S | Mostra/nascondi l'indice |
@@ -138,9 +138,9 @@ Include marked, highlight.js, KaTeX e Mermaid, ciascuno con la propria licenza l
 
 ## English
 
-MD Viewer is a minimal Markdown viewer for macOS 13+ (Apple Silicon and Intel) with an optional
-side-by-side editor and live preview, table of contents, search, themes, syntax highlighting, math
-(KaTeX), Mermaid diagrams, an HTML source view, PDF and HTML export and a Finder Quick Look preview. The interface is in Italian.
+MD Viewer is a minimal Markdown viewer for macOS 13+ (Apple Silicon and Intel) with up to three
+side-by-side panes (Markdown, live preview, generated HTML), table of contents, search, themes, syntax highlighting, math
+(KaTeX), Mermaid diagrams, PDF and HTML export and a Finder Quick Look preview. The interface is in Italian.
 Licensed under the GNU GPL v3.
 
 Install from Terminal:

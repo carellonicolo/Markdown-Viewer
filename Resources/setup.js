@@ -67,7 +67,7 @@
         var inner = this.parser.parseInline(token.tokens);
         var plain = decodeHtml(inner.replace(/<[^>]*>/g, '')).trim();
         var id = slugify(plain);
-        headings.push({ level: token.depth, text: plain, id: id });
+        headings.push({ level: token.depth, text: plain, id: id, offset: token.offset === undefined ? null : token.offset });
         return '<h' + token.depth + ' id="' + id + '">' + inner + '</h' + token.depth + '>\n';
       },
       code: function (token) {
@@ -103,11 +103,30 @@
     slugOccurrences = {};
     headings = [];
     flags = { math: false, mermaid: false };
+    var original = src;
     src = src.replace(/^﻿/, '');
     // Front matter YAML: solo se la prima riga dopo "---" è del tipo "chiave: valore",
     // così una linea orizzontale a inizio documento non fa sparire il testo.
     src = src.replace(/^---[ \t]*\r?\n(?=[\w"'-][^\n]*:)[\s\S]*?\r?\n(?:---|\.\.\.)[ \t]*(?:\r?\n|$)/, '');
-    var html = marked.parse(src);
+    var prefix = original.length - src.length;
+    // marked trasforma gli a capo \r\n e \r in \n: le posizioni dei titoli vanno riportate sul testo
+    // originale (in unità UTF-16, come in NSString), così l'editor può andare al titolo giusto.
+    var norm = src.replace(/\r\n|\r/g, '\n');
+    var tokens = marked.lexer(norm);
+    var cursor = 0, mapNorm = 0, mapOrig = 0;
+    tokens.forEach(function (token) {
+      // Ogni blocco è un pezzo identico del testo, in ordine (le definizioni dei link non hanno blocco).
+      var pos = norm.indexOf(token.raw, cursor);
+      if (pos < 0) return;
+      cursor = pos + token.raw.length;
+      if (token.type !== 'heading') return;
+      while (mapNorm < pos && mapOrig < src.length) {
+        mapOrig += src.charCodeAt(mapOrig) === 13 && src.charCodeAt(mapOrig + 1) === 10 ? 2 : 1;
+        mapNorm++;
+      }
+      token.offset = prefix + mapOrig;
+    });
+    var html = marked.parser(tokens);
     return JSON.stringify({ html: html, headings: headings, math: flags.math, mermaid: flags.mermaid });
   };
 })();

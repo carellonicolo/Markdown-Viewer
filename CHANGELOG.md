@@ -1,5 +1,16 @@
 # Novità
 
+## 2.4 — 2026-11-12
+
+- Un solo selettore "Vista" per tre pannelli da affiancare: Markdown, Anteprima e HTML. Si accendono e
+  si spengono liberamente (anche tutti e tre insieme), in parti uguali; la finestra si allarga quanto
+  serve e torna com'era con un solo pannello. Menu Vista: ⌥⌘1, ⌥⌘2, ⌥⌘3 (⌘E e ⌥⌘U funzionano ancora).
+- Con più pannelli ognuno ha un'intestazione: righe del Markdown, parole e tempo di lettura
+  dell'anteprima, righe del codice HTML con i pulsanti Copia HTML ed Esporta.
+- L'indice porta al titolo in tutti i pannelli aperti; nel Markdown anche il cursore va lì.
+- La ricerca (⌘F) cerca nel pannello in cui si sta lavorando.
+- I file di sola lettura (come le licenze) mostrano il Markdown senza poterlo modificare.
+
 ## 2.3 — 2026-11-12
 
 - Vista HTML: il selettore Anteprima | HTML nella barra in alto (o Vista → Mostra codice HTML, ⌥⌘U)

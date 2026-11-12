@@ -7,6 +7,9 @@ struct Heading: Decodable {
     let level: Int
     let text: String
     let id: String
+    /// Dove inizia il titolo nel testo Markdown (in unità UTF-16, come NSString); nil se non si sa
+    /// (per esempio un titolo dentro una citazione).
+    let offset: Int?
 }
 
 struct RenderedMarkdown: Decodable {
