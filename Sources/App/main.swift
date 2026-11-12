@@ -461,6 +461,83 @@ final class FindBar: NSView, NSSearchFieldDelegate {
     }
 }
 
+// MARK: - Barra della vista HTML
+
+final class SourceBar: NSView {
+    private let label = NSTextField(labelWithString: "")
+    private let copyButton = NSButton()
+    private var restoreWork: DispatchWorkItem?
+    var onCopy: (() -> Void)?
+    var onExport: (() -> Void)?
+
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        let icon = NSImageView(image: NSImage(systemSymbolName: "chevron.left.forwardslash.chevron.right",
+                                              accessibilityDescription: nil)!)
+        icon.contentTintColor = .secondaryLabelColor
+        label.textColor = .secondaryLabelColor
+        label.font = .systemFont(ofSize: NSFont.smallSystemFontSize)
+        label.lineBreakMode = .byTruncatingTail
+        label.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        label.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+
+        copyButton.bezelStyle = .accessoryBarAction
+        copyButton.imagePosition = .imageLeading
+        copyButton.target = self
+        copyButton.action = #selector(copyClicked)
+        copyButton.toolTip = "Copia negli appunti il codice HTML del documento"
+        setCopied(false)
+        let export = NSButton(title: "Esporta…", target: self, action: #selector(exportClicked))
+        export.bezelStyle = .accessoryBarAction
+        export.toolTip = "Salva come pagina HTML completa, con stile e immagini (⇧⌘H)"
+
+        let stack = NSStackView(views: [icon, label, copyButton, export])
+        stack.spacing = 6
+        stack.edgeInsets = NSEdgeInsets(top: 6, left: 12, bottom: 6, right: 10)
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(stack)
+
+        let separator = NSBox()
+        separator.boxType = .separator
+        separator.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(separator)
+
+        NSLayoutConstraint.activate([
+            stack.leadingAnchor.constraint(equalTo: leadingAnchor),
+            stack.trailingAnchor.constraint(equalTo: trailingAnchor),
+            stack.topAnchor.constraint(equalTo: topAnchor),
+            stack.bottomAnchor.constraint(equalTo: separator.topAnchor),
+            separator.leadingAnchor.constraint(equalTo: leadingAnchor),
+            separator.trailingAnchor.constraint(equalTo: trailingAnchor),
+            separator.bottomAnchor.constraint(equalTo: bottomAnchor),
+        ])
+    }
+
+    required init?(coder: NSCoder) { fatalError() }
+
+    func setLineCount(_ lines: Int) {
+        label.stringValue = "Codice HTML del documento · \(lines) \(lines == 1 ? "riga" : "righe")"
+    }
+
+    /// Conferma visiva della copia, per un momento.
+    func showCopied() {
+        setCopied(true)
+        restoreWork?.cancel()
+        let work = DispatchWorkItem { [weak self] in self?.setCopied(false) }
+        restoreWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5, execute: work)
+    }
+
+    private func setCopied(_ copied: Bool) {
+        copyButton.title = copied ? "Copiato" : "Copia HTML"
+        copyButton.image = NSImage(systemSymbolName: copied ? "checkmark" : "doc.on.doc",
+                                   accessibilityDescription: nil)
+    }
+
+    @objc private func copyClicked() { onCopy?() }
+    @objc private func exportClicked() { onExport?() }
+}
+
 // MARK: - Finestra
 
 final class ViewerWindowController: NSWindowController, WKNavigationDelegate, WKUIDelegate,
@@ -480,6 +557,20 @@ final class ViewerWindowController: NSWindowController, WKNavigationDelegate, WK
     private var pendingScrollY: Double?
     private var lastScrollY: Double = 0
     private var allowsScripts = false
+
+    // Vista "HTML": il codice generato, in una seconda WebView sopra l'anteprima (creata solo se serve).
+    // L'anteprima resta caricata sotto: stampa, PDF ed esportazione continuano a usarla.
+    private let column: NSStackView
+    private let sourceBar = SourceBar()
+    private var sourceView: WKWebView?
+    private var sourceLoaded = false
+    private var sourceGeneration = 0
+    private var showsSource = false
+    private weak var viewModeItem: NSToolbarItemGroup?
+    /// L'HTML prodotto dall'ultima conversione (quello che "Copia HTML" mette negli appunti).
+    private var htmlFragment = ""
+    /// La WebView visibile: l'anteprima o il codice HTML.
+    private var activeWebView: WKWebView { showsSource ? (sourceView ?? webView) : webView }
 
     /// La pagina attualmente caricata nella WebView.
     private struct LoadedPage {
@@ -543,7 +634,8 @@ final class ViewerWindowController: NSWindowController, WKNavigationDelegate, WK
         editorItem.isCollapsed = true
 
         findBar.isHidden = true
-        let column = NSStackView(views: [findBar, webView])
+        sourceBar.isHidden = true
+        column = NSStackView(views: [findBar, sourceBar, webView])
         column.orientation = .vertical
         column.spacing = 0
         column.alignment = .width
@@ -568,7 +660,7 @@ final class ViewerWindowController: NSWindowController, WKNavigationDelegate, WK
 
         window.delegate = self
         // Nome nuovo a ogni cambio dei pulsanti predefiniti: una disposizione salvata li nasconderebbe.
-        let toolbar = NSToolbar(identifier: "MDViewerToolbar2")
+        let toolbar = NSToolbar(identifier: "MDViewerToolbar3")
         toolbar.delegate = self
         toolbar.displayMode = .iconOnly
         toolbar.allowsUserCustomization = true
@@ -585,6 +677,8 @@ final class ViewerWindowController: NSWindowController, WKNavigationDelegate, WK
         toc.onSelect = { [weak self] heading in self?.scroll(to: heading) }
         findBar.onSearch = { [weak self] text, backwards in self?.find(text, backwards: backwards) }
         findBar.onClose = { [weak self] in self?.hideFindBar() }
+        sourceBar.onCopy = { [weak self] in self?.copyHTML(nil) }
+        sourceBar.onExport = { [weak self] in self?.exportHTML(nil) }
         editor.delegate = self
         editorScroll.contentView.postsBoundsChangedNotifications = true
         NotificationCenter.default.addObserver(self, selector: #selector(editorDidScroll),
@@ -666,6 +760,8 @@ final class ViewerWindowController: NSWindowController, WKNavigationDelegate, WK
     private func show(_ rendered: RenderedMarkdown, html: String, fileURL: URL, restoring y: Double?,
                       reloadPage: Bool, generation: Int) {
         toc.headings = rendered.headings
+        htmlFragment = rendered.html
+        if showsSource { updateSource() }
         if let y {
             load(html, rendered: rendered, fileURL: fileURL, scrollTo: y)
             return
@@ -714,6 +810,14 @@ final class ViewerWindowController: NSWindowController, WKNavigationDelegate, WK
 
     // Il tema cambia solo la classe della pagina: nessun ricaricamento.
     @objc private func themeDidChange() {
+        if let sourceView, !sourceView.isLoading {
+            sourceView.callAsyncJavaScript("document.documentElement.className = cls",
+                                           arguments: ["cls": "theme-\(Theme.current.rawValue)"],
+                                           in: nil, in: .defaultClient, completionHandler: nil)
+        } else {
+            sourceLoaded = false // la pagina del codice verrà ricreata con il tema nuovo
+            if showsSource { updateSource() }
+        }
         if webView.isLoading {
             render() // la pagina in arrivo potrebbe avere ancora il tema precedente
             return
@@ -723,9 +827,91 @@ final class ViewerWindowController: NSWindowController, WKNavigationDelegate, WK
                                     in: nil, in: .defaultClient, completionHandler: nil)
     }
 
+    // Nella vista HTML porta alla riga del codice in cui inizia il titolo.
     private func scroll(to heading: Heading) {
-        let id = heading.id.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "'", with: "\\'")
-        webView.evaluateJavaScript("document.getElementById('\(id)')?.scrollIntoView({behavior: 'smooth'})")
+        activeWebView.callAsyncJavaScript("document.getElementById(id)?.scrollIntoView({behavior: 'smooth'})",
+                                          arguments: ["id": (showsSource ? "src-" : "") + heading.id],
+                                          in: nil, in: .defaultClient, completionHandler: nil)
+    }
+
+    // MARK: Vista HTML
+
+    @objc func toggleHTMLSource(_ sender: Any?) { setShowsSource(!showsSource) }
+
+    @objc func viewModeClicked(_ sender: NSToolbarItemGroup) { setShowsSource(sender.selectedIndex == 1) }
+
+    private func setShowsSource(_ show: Bool) {
+        viewModeItem?.selectedIndex = show ? 1 : 0
+        guard show != showsSource else { return }
+        // La tastiera (scorrimento, ⌘A, ⌘C) segue la vista visibile, se era su una delle due.
+        let responder = window?.firstResponder as? NSView
+        let focusWasOnPage = responder.map { r in [webView, sourceView].contains { $0 != nil && r.isDescendant(of: $0!) } } ?? false
+        showsSource = show
+        if show && sourceView == nil { sourceView = makeSourceView() }
+        sourceView?.isHidden = !show
+        sourceBar.isHidden = !show
+        if show { updateSource() }
+        if focusWasOnPage { window?.makeFirstResponder(activeWebView) }
+        if !findBar.isHidden { find(findBar.field.stringValue, backwards: false) }
+    }
+
+    private func makeSourceView() -> WKWebView {
+        let config = WKWebViewConfiguration()
+        config.defaultWebpagePreferences.allowsContentJavaScript = false
+        let view = WKWebView(frame: webView.frame, configuration: config)
+        if view.responds(to: NSSelectorFromString("setDrawsBackground:")) {
+            view.setValue(false, forKey: "drawsBackground")
+        }
+        view.pageZoom = webView.pageZoom
+        view.allowsMagnification = true
+        view.navigationDelegate = self
+        view.uiDelegate = self
+        // Sovrapposta esattamente all'anteprima, che resta caricata sotto.
+        view.translatesAutoresizingMaskIntoConstraints = false
+        column.addSubview(view)
+        NSLayoutConstraint.activate([
+            view.leadingAnchor.constraint(equalTo: webView.leadingAnchor),
+            view.trailingAnchor.constraint(equalTo: webView.trailingAnchor),
+            view.topAnchor.constraint(equalTo: webView.topAnchor),
+            view.bottomAnchor.constraint(equalTo: webView.bottomAnchor),
+        ])
+        sourceLoaded = false
+        return view
+    }
+
+    /// Colora il codice HTML in background e lo mostra, aggiornando sul posto quando possibile
+    /// (così mentre si scrive nell'editor la posizione nel codice non cambia).
+    private func updateSource() {
+        guard let view = sourceView else { return }
+        sourceGeneration += 1
+        let generation = sourceGeneration
+        let fragment = htmlFragment
+        let theme = Theme.current.rawValue
+        sourceBar.setLineCount(fragment.utf8.reduce(0) { $1 == 10 ? $0 + 1 : $0 })
+        Self.renderQueue.async { [weak self] in
+            let renderer = MarkdownRenderer.shared
+            let code = "<pre class=\"html-source\"><code>\(renderer.highlightedSource(fragment))</code></pre>"
+            DispatchQueue.main.async {
+                guard let self, generation == self.sourceGeneration else { return }
+                if self.sourceLoaded && !view.isLoading {
+                    view.callAsyncJavaScript("document.querySelector('article.markdown-body').innerHTML = html",
+                                             arguments: ["html": code], in: nil, in: .defaultClient) { [weak self] _ in
+                        self?.updateFindCount()
+                    }
+                } else {
+                    self.sourceLoaded = true
+                    let page = renderer.page(for: RenderedMarkdown(html: code, headings: [], math: false, mermaid: false),
+                                             theme: theme, allowRemoteImages: false)
+                    view.loadHTMLString(page, baseURL: nil)
+                }
+            }
+        }
+    }
+
+    @objc func copyHTML(_ sender: Any?) {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(htmlFragment, forType: .string)
+        sourceBar.showCopied()
     }
 
     // Ogni secondo: ricarica se il file è cambiato o è stato rinominato, e salva la posizione di lettura.
@@ -764,6 +950,8 @@ final class ViewerWindowController: NSWindowController, WKNavigationDelegate, WK
         } else if item.action == #selector(toggleEditor(_:)) {
             item.state = isEditing ? .on : .off
             return markdownDocument?.isReadOnly == false
+        } else if item.action == #selector(toggleHTMLSource(_:)) {
+            item.state = showsSource ? .on : .off
         }
         return true
     }
@@ -855,7 +1043,7 @@ final class ViewerWindowController: NSWindowController, WKNavigationDelegate, WK
         guard let scroll = editor.enclosingScrollView, pendingScrollY == nil else { return }
         let range = editor.frame.height - scroll.contentView.bounds.height
         let fraction = range > 0 ? min(max(scroll.contentView.bounds.minY / range, 0), 1) : 0
-        webView.callAsyncJavaScript(
+        activeWebView.callAsyncJavaScript(
             "window.scrollTo(0, f * (document.documentElement.scrollHeight - window.innerHeight))",
             arguments: ["f": fraction], in: nil, in: .defaultClient, completionHandler: nil)
     }
@@ -887,7 +1075,7 @@ final class ViewerWindowController: NSWindowController, WKNavigationDelegate, WK
     private func hideFindBar() {
         findBar.isHidden = true
         findBar.setCount(total: nil)
-        window?.makeFirstResponder(webView)
+        window?.makeFirstResponder(activeWebView)
     }
 
     @objc func toggleFindBar(_ sender: Any?) {
@@ -915,7 +1103,7 @@ final class ViewerWindowController: NSWindowController, WKNavigationDelegate, WK
         config.backwards = backwards
         config.caseSensitive = false
         config.wraps = true
-        webView.find(text, configuration: config) { [weak self] _ in self?.updateFindCount() }
+        activeWebView.find(text, configuration: config) { [weak self] _ in self?.updateFindCount() }
     }
 
     // Conta le occorrenze (senza distinguere maiuscole/minuscole) e quante precedono
@@ -939,7 +1127,7 @@ final class ViewerWindowController: NSWindowController, WKNavigationDelegate, WK
     private func updateFindCount() {
         let text = findBar.field.stringValue
         guard !findBar.isHidden, !text.isEmpty else { return }
-        webView.callAsyncJavaScript(Self.findCountScript, arguments: ["query": text],
+        activeWebView.callAsyncJavaScript(Self.findCountScript, arguments: ["query": text],
                                     in: nil, in: .defaultClient) { [weak self] result in
             guard case .success(let value) = result, let numbers = value as? [Int], numbers.count == 2 else { return }
             self?.findBar.setCount(current: numbers[0], total: numbers[1])
@@ -953,6 +1141,7 @@ final class ViewerWindowController: NSWindowController, WKNavigationDelegate, WK
     private func setZoom(_ value: CGFloat) {
         let z = min(max(value, 0.5), 3.0)
         webView.pageZoom = z
+        sourceView?.pageZoom = z
         UserDefaults.standard.set(Double(z), forKey: Self.zoomKey)
     }
 
@@ -1061,6 +1250,10 @@ final class ViewerWindowController: NSWindowController, WKNavigationDelegate, WK
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         updateFindCount()
+        guard webView === self.webView else { // la pagina del codice HTML
+            if isEditing { syncPreviewScroll() }
+            return
+        }
         guard let y = pendingScrollY else { return }
         // Con i diagrammi, aspetta che siano disegnati (cambiano l'altezza della pagina).
         let waitForDiagrams = loadedPage?.mermaid == true ? "try { await window.mermaidReady; } catch (e) {}\n" : ""
@@ -1075,17 +1268,28 @@ final class ViewerWindowController: NSWindowController, WKNavigationDelegate, WK
 
     // Se il caricamento fallisce, la memoria della posizione non deve restare bloccata.
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: any Error) {
-        pendingScrollY = nil
+        if webView === self.webView { pendingScrollY = nil }
     }
 
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!,
                  withError error: any Error) {
-        pendingScrollY = nil
+        if webView === self.webView { pendingScrollY = nil }
     }
 
     func webView(_ webView: WKWebView, decidePolicyFor action: WKNavigationAction,
                  preferences: WKWebpagePreferences,
                  decisionHandler: @escaping @MainActor (WKNavigationActionPolicy, WKWebpagePreferences) -> Void) {
+        // La pagina del codice HTML è solo testo: si carica e basta (un file trascinato si apre come al solito).
+        if webView === sourceView {
+            preferences.allowsContentJavaScript = false
+            if let url = action.request.url, url.isFileURL {
+                decisionHandler(.cancel, preferences)
+                openLocal(url)
+            } else {
+                decisionHandler(action.request.url?.absoluteString == "about:blank" ? .allow : .cancel, preferences)
+            }
+            return
+        }
         preferences.allowsContentJavaScript = allowsScripts
         let allow = { decisionHandler(.allow, preferences) }
         let cancel = { decisionHandler(.cancel, preferences) }
@@ -1192,6 +1396,7 @@ final class ViewerWindowController: NSWindowController, WKNavigationDelegate, WK
 extension NSToolbarItem.Identifier {
     static let toc = Self("toc")
     static let edit = Self("edit")
+    static let viewMode = Self("viewMode")
     static let zoom = Self("zoom")
     static let theme = Self("theme")
     static let find = Self("find")
@@ -1201,7 +1406,7 @@ extension NSToolbarItem.Identifier {
 
 extension ViewerWindowController: NSToolbarDelegate {
     func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
-        [.toc, .flexibleSpace, .edit, .zoom, .theme, .find, .export, .more]
+        [.toc, .flexibleSpace, .edit, .viewMode, .zoom, .theme, .find, .export, .more]
     }
 
     func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
@@ -1236,6 +1441,17 @@ extension ViewerWindowController: NSToolbarDelegate {
         case .edit:
             return button("square.and.pencil", "Modifica", "Mostra/nascondi l'editor accanto all'anteprima (⌘E)",
                           #selector(toggleEditor(_:)))
+        case .viewMode:
+            let group = NSToolbarItemGroup(
+                itemIdentifier: id,
+                images: [symbol("doc.richtext", "Anteprima"), symbol("chevron.left.forwardslash.chevron.right", "HTML")],
+                selectionMode: .selectOne, labels: ["Anteprima", "HTML"],
+                target: self, action: #selector(viewModeClicked(_:)))
+            group.label = "Vista"
+            group.toolTip = "Anteprima del documento o codice HTML generato (⌥⌘U)"
+            group.selectedIndex = showsSource ? 1 : 0
+            viewModeItem = group
+            return group
         case .find:
             return button("magnifyingglass", "Cerca", "Cerca nel documento (⌘F)", #selector(toggleFindBar(_:)))
         case .export:
@@ -1246,6 +1462,8 @@ extension ViewerWindowController: NSToolbarDelegate {
             let menu = NSMenu()
             menu.addItem(menuItem("PDF…", #selector(exportPDF(_:))))
             menu.addItem(menuItem("HTML…", #selector(exportHTML(_:))))
+            menu.addItem(.separator())
+            menu.addItem(menuItem("Copia codice HTML", #selector(copyHTML(_:))))
             item.menu = menu
             return item
         case .zoom:
@@ -1458,6 +1676,7 @@ func buildMainMenu() -> NSMenu {
     add(file, "Salva", #selector(NSDocument.save(_:)), "s")
     add(file, "Esporta come PDF…", #selector(ViewerWindowController.exportPDF(_:)), "p", [.command, .option])
     add(file, "Esporta come HTML…", #selector(ViewerWindowController.exportHTML(_:)), "h", [.command, .shift])
+    add(file, "Copia codice HTML", #selector(ViewerWindowController.copyHTML(_:)))
     add(file, "Stampa…", #selector(ViewerWindowController.printContent(_:)), "p")
 
     let edit = submenu("Modifica")
@@ -1477,6 +1696,7 @@ func buildMainMenu() -> NSMenu {
     let view = submenu("Vista")
     add(view, "Mostra indice", #selector(ViewerWindowController.toggleTOC(_:)), "s", [.command, .control])
     add(view, "Mostra editor", #selector(ViewerWindowController.toggleEditor(_:)), "e")
+    add(view, "Mostra codice HTML", #selector(ViewerWindowController.toggleHTMLSource(_:)), "u", [.command, .option])
     view.addItem(.separator())
     let themes = submenu("Tema", in: view)
     for (i, theme) in Theme.allCases.enumerated() {

@@ -1,5 +1,12 @@
 # Novità
 
+## 2.3 — 2026-11-12
+
+- Vista HTML: il selettore Anteprima | HTML nella barra in alto (o Vista → Mostra codice HTML, ⌥⌘U)
+  mostra il codice HTML generato, colorato e con i numeri di riga, aggiornato mentre scrivi.
+- Pulsante Copia HTML per incollare il codice in un sito o in una piattaforma come Moodle.
+- Nella vista HTML l'indice porta alla riga in cui inizia ogni titolo.
+
 ## 2.2 — 2026-11-12
 
 - Esportazione in HTML (File → Esporta come HTML…, ⇧⌘H, o pulsante Esporta): una sola pagina che si

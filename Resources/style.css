@@ -170,6 +170,30 @@ pre.mermaid[data-processed] { background: none; text-align: center; padding: 0; 
   pre.mermaid[data-processed] svg { filter: invert(0.9) hue-rotate(180deg); }
 }
 
+/* ---------- Vista "HTML": il codice generato, con i numeri di riga ---------- */
+.markdown-body:has(> pre.html-source) { max-width: none; }
+pre.html-source {
+  margin: 0;
+  padding: 0;
+  background: none;
+  font-size: 12.5px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  counter-reset: line;
+}
+pre.html-source .line { display: block; position: relative; min-height: 1.6em; padding-left: 4.5em; }
+pre.html-source .line::before {
+  counter-increment: line;
+  content: counter(line);
+  position: absolute;
+  left: 0;
+  width: 3.2em;
+  text-align: right;
+  color: var(--muted);
+  opacity: .6;
+}
+
 @media print {
   /* Su carta sempre colori chiari, anche se il Mac è in modalità scura. */
   html, html.theme-libro, html.theme-compatto {

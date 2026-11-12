@@ -87,6 +87,18 @@
     }
   });
 
+  // Codice HTML colorato riga per riga: ogni riga è un elemento (per i numeri di riga) e la riga
+  // in cui inizia un titolo ha un'àncora "src-<id>", così l'indice porta anche lì.
+  globalThis.highlightHTMLSource = function (html) {
+    var lines = html.replace(/\n$/, '').split('\n');
+    return lines.map(function (line) {
+      var m = /^<h[1-6] id="([^"]*)"/.exec(line);
+      var anchor = m ? ' id="src-' + m[1] + '"' : '';
+      var code = line ? hljs.highlight(line, { language: 'xml', ignoreIllegals: true }).value : '';
+      return '<span class="line"' + anchor + '>' + code + '</span>';
+    }).join('');
+  };
+
   globalThis.renderMarkdown = function (src) {
     slugOccurrences = {};
     headings = [];

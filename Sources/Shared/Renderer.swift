@@ -64,6 +64,14 @@ final class MarkdownRenderer {
         return RenderedMarkdown(html: "<pre>\(markdown.htmlEscaped)</pre>", headings: [], math: false, mermaid: false)
     }
 
+    /// Il codice HTML colorato riga per riga, per la vista "HTML" (numeri di riga via CSS).
+    func highlightedSource(_ html: String) -> String {
+        lock.lock()
+        defer { lock.unlock() }
+        return context.objectForKeyedSubscript("highlightHTMLSource")?
+            .call(withArguments: [html])?.toString() ?? html.htmlEscaped
+    }
+
     /// Pagina HTML completa. `scriptsBaseURL` (es. "mdview://bundle/") abilita i diagrammi Mermaid;
     /// con `allowRemoteImages` falso le immagini da internet non vengono scaricate (privacy).
     func page(for rendered: RenderedMarkdown, theme: String, scriptsBaseURL: String? = nil,
