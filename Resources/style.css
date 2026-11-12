@@ -171,8 +171,10 @@ pre.mermaid[data-processed] { background: none; text-align: center; padding: 0; 
 }
 
 /* ---------- Vista "HTML": il codice generato, con i numeri di riga ---------- */
-.markdown-body:has(> pre.html-source) { max-width: none; }
+/* Niente margini da documento: il codice usa tutta la larghezza del pannello. */
+.markdown-body:has(> pre.html-source) { max-width: none; padding: 12px 12px 48px 6px; }
 pre.html-source {
+  --gutter: calc(var(--digits, 3) * 0.62em + 0.9em);
   margin: 0;
   padding: 0;
   background: none;
@@ -182,13 +184,13 @@ pre.html-source {
   overflow-wrap: anywhere;
   counter-reset: line;
 }
-pre.html-source .line { display: block; position: relative; min-height: 1.6em; padding-left: 4.5em; }
+pre.html-source .line { display: block; position: relative; min-height: 1.6em; padding-left: var(--gutter); }
 pre.html-source .line::before {
   counter-increment: line;
   content: counter(line);
   position: absolute;
   left: 0;
-  width: 3.2em;
+  width: calc(var(--gutter) - 0.9em);
   text-align: right;
   color: var(--muted);
   opacity: .6;

@@ -1,5 +1,12 @@
 # Novità
 
+## 2.5 — 2026-11-12
+
+- Indice: allargando la barra laterale i titoli lunghi si leggono per intero (prima restavano troncati
+  alla larghezza iniziale).
+- Pannello HTML: niente più margine largo a sinistra; il codice usa tutto lo spazio e la colonna dei
+  numeri di riga è larga quanto le cifre che servono.
+
 ## 2.4 — 2026-11-12
 
 - Un solo selettore "Vista" per tre pannelli da affiancare: Markdown, Anteprima e HTML. Si accendono e

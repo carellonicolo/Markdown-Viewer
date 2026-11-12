@@ -251,6 +251,13 @@ final class TOCViewController: NSViewController, NSTableViewDataSource, NSTableV
         view = container
     }
 
+    // La colonna dei titoli è sempre larga quanto la barra laterale: allargandola, i titoli troncati
+    // si leggono per intero (il ridimensionamento automatico delle colonne qui non interviene).
+    override func viewDidLayout() {
+        super.viewDidLayout()
+        tableView.sizeLastColumnToFit()
+    }
+
     func numberOfRows(in tableView: NSTableView) -> Int { headings.count }
 
     func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
@@ -1011,9 +1018,12 @@ final class ViewerWindowController: NSWindowController, WKNavigationDelegate, WK
         let theme = Theme.current.rawValue
         let lines = fragment.utf8.reduce(0) { $1 == 10 ? $0 + 1 : $0 }
         htmlHeader.setDetail("\(lines) \(lines == 1 ? "riga" : "righe")")
+        // La colonna dei numeri di riga è larga quanto le cifre che servono (come nel testo Markdown).
+        let digits = max(2, String(lines).count)
         Self.renderQueue.async { [weak self] in
             let renderer = MarkdownRenderer.shared
-            let code = "<pre class=\"html-source\"><code>\(renderer.highlightedSource(fragment))</code></pre>"
+            let code = "<pre class=\"html-source\" style=\"--digits: \(digits)\"><code>"
+                + renderer.highlightedSource(fragment) + "</code></pre>"
             DispatchQueue.main.async {
                 guard let self, generation == self.sourceGeneration else { return }
                 if self.sourceLoaded && !view.isLoading {
