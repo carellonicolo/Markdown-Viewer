@@ -1,5 +1,11 @@
 # Novità
 
+## 2.2 — 2026-11-12
+
+- Esportazione in HTML (File → Esporta come HTML…, ⇧⌘H, o pulsante Esporta): una sola pagina che si
+  apre in qualsiasi browser, con immagini, formule e diagrammi incorporati.
+- Nella barra in alto il pulsante Esporta offre PDF e HTML.
+
 ## 2.1 — 2026-11-06
 
 - Numeri di riga nell'editor, con la riga corrente evidenziata.

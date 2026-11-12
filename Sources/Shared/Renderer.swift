@@ -1,6 +1,7 @@
 // Motore di rendering condiviso tra l'app e l'estensione Quick Look.
 import Foundation
 import JavaScriptCore
+import UniformTypeIdentifiers
 
 struct Heading: Decodable {
     let level: Int
@@ -66,7 +67,7 @@ final class MarkdownRenderer {
     /// Pagina HTML completa. `scriptsBaseURL` (es. "mdview://bundle/") abilita i diagrammi Mermaid;
     /// con `allowRemoteImages` falso le immagini da internet non vengono scaricate (privacy).
     func page(for rendered: RenderedMarkdown, theme: String, scriptsBaseURL: String? = nil,
-              allowRemoteImages: Bool = true) -> String {
+              allowRemoteImages: Bool = true, title: String? = nil) -> String {
         var head = "<style>\(css)</style>"
         if rendered.math {
             lock.lock()
@@ -89,10 +90,41 @@ final class MarkdownRenderer {
         <html class="theme-\(theme)"><head><meta charset="utf-8">
         <meta http-equiv="Content-Security-Policy" content="\(csp)">
         <meta name="color-scheme" content="light dark">
+        \(title.map { "<title>\($0.htmlEscaped)</title>" } ?? "")
         \(head)</head>
         <body><article class="markdown-body">\(rendered.html)</article>\(scripts)</body></html>
         """
     }
+}
+
+/// Sostituisce le immagini locali (percorsi relativi a `baseDirectory` o file://) con il loro contenuto
+/// incorporato (data:), così la pagina esportata funziona anche spostata o inviata ad altri.
+/// Le immagini da internet restano collegamenti.
+func embeddingLocalImages(in html: String, baseDirectory: URL, maxBytes: Int = 25_000_000) -> String {
+    let regex = try! NSRegularExpression(pattern: #"(<img\b[^>]*?\ssrc=")([^"]+)(")"#, options: .caseInsensitive)
+    var result = html
+    for match in regex.matches(in: html, range: NSRange(html.startIndex..., in: html)).reversed() {
+        let src = String(html[Range(match.range(at: 2), in: html)!]).replacingOccurrences(of: "&amp;", with: "&")
+        let lower = src.lowercased()
+        let fileURL: URL?
+        if lower.hasPrefix("file:") {
+            fileURL = URL(string: src)
+        } else if lower.range(of: #"^[a-z][a-z0-9+.-]*:"#, options: .regularExpression) != nil || lower.hasPrefix("//") {
+            continue // http:, https:, data: …
+        } else {
+            let path = (src.components(separatedBy: CharacterSet(charactersIn: "?#")).first ?? src)
+            let decoded = path.removingPercentEncoding ?? path
+            fileURL = decoded.hasPrefix("/") ? URL(fileURLWithPath: decoded)
+                                             : baseDirectory.appendingPathComponent(decoded).standardizedFileURL
+        }
+        guard let fileURL,
+              let size = (try? fileURL.resourceValues(forKeys: [.fileSizeKey]))?.fileSize, size <= maxBytes,
+              let data = try? Data(contentsOf: fileURL) else { continue }
+        let mime = UTType(filenameExtension: fileURL.pathExtension)?.preferredMIMEType ?? "application/octet-stream"
+        result.replaceSubrange(Range(match.range(at: 2), in: result)!,
+                               with: "data:\(mime);base64,\(data.base64EncodedString())")
+    }
+    return result
 }
 
 extension String {

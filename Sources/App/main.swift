@@ -1017,6 +1017,46 @@ final class ViewerWindowController: NSWindowController, WKNavigationDelegate, WK
         }
     }
 
+    @objc func exportHTML(_ sender: Any?) {
+        guard let window, let doc = markdownDocument, loadedPage != nil else { return NSSound.beep() }
+        let name = ((doc.fileURL?.lastPathComponent ?? doc.displayName) as NSString).deletingPathExtension
+        let title = toc.headings.first { $0.level == 1 }?.text ?? name
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [.html]
+        panel.nameFieldStringValue = name + ".html"
+        if let dir = doc.fileURL?.deletingLastPathComponent() { panel.directoryURL = dir }
+        panel.beginSheetModal(for: window) { [weak self] response in
+            guard response == .OK, let url = panel.url else { return }
+            self?.writeHTML(to: url, title: title)
+        }
+    }
+
+    /// Salva il documento come pagina HTML autonoma: prende il contenuto così come è mostrato
+    /// (diagrammi già disegnati, quindi senza script) e incorpora stile, formule e immagini locali.
+    private func writeHTML(to url: URL, title: String) {
+        guard let page = loadedPage, let baseDirectory = markdownDocument?.fileURL?.deletingLastPathComponent() else { return }
+        let script = (page.mermaid ? "try { await window.mermaidReady; } catch (e) {}\n" : "")
+            + "return document.querySelector('article.markdown-body').innerHTML;"
+        let theme = Theme.current.rawValue
+        webView.callAsyncJavaScript(script, arguments: [:], in: nil,
+                                    in: page.mermaid ? .page : .defaultClient) { [weak self] result in
+            guard case .success(let value) = result, let article = value as? String else {
+                self?.confirm("Esportazione non riuscita", detail: "Riprova tra qualche istante.", buttons: ["OK"]) { _ in }
+                return
+            }
+            DispatchQueue.global(qos: .userInitiated).async {
+                let rendered = RenderedMarkdown(html: embeddingLocalImages(in: article, baseDirectory: baseDirectory),
+                                                headings: [], math: page.math, mermaid: false)
+                let html = MarkdownRenderer.shared.page(for: rendered, theme: theme, title: title)
+                do {
+                    try Data(html.utf8).write(to: url, options: .atomic)
+                } catch {
+                    DispatchQueue.main.async { NSApp.presentError(error) }
+                }
+            }
+        }
+    }
+
     // MARK: Navigazione
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
@@ -1155,13 +1195,13 @@ extension NSToolbarItem.Identifier {
     static let zoom = Self("zoom")
     static let theme = Self("theme")
     static let find = Self("find")
-    static let exportPDF = Self("exportPDF")
+    static let export = Self("exportPDF") // nome storico: così le barre personalizzate lo ritrovano
     static let more = Self("more")
 }
 
 extension ViewerWindowController: NSToolbarDelegate {
     func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
-        [.toc, .flexibleSpace, .edit, .zoom, .theme, .find, .exportPDF, .more]
+        [.toc, .flexibleSpace, .edit, .zoom, .theme, .find, .export, .more]
     }
 
     func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
@@ -1198,8 +1238,16 @@ extension ViewerWindowController: NSToolbarDelegate {
                           #selector(toggleEditor(_:)))
         case .find:
             return button("magnifyingglass", "Cerca", "Cerca nel documento (⌘F)", #selector(toggleFindBar(_:)))
-        case .exportPDF:
-            return button("arrow.down.doc", "Esporta PDF", "Esporta come PDF (⌥⌘P)", #selector(exportPDF(_:)))
+        case .export:
+            let item = NSMenuToolbarItem(itemIdentifier: id)
+            item.image = symbol("arrow.down.doc", "Esporta")
+            item.label = "Esporta"
+            item.toolTip = "Esporta come PDF o come pagina HTML"
+            let menu = NSMenu()
+            menu.addItem(menuItem("PDF…", #selector(exportPDF(_:))))
+            menu.addItem(menuItem("HTML…", #selector(exportHTML(_:))))
+            item.menu = menu
+            return item
         case .zoom:
             let group = NSToolbarItemGroup(
                 itemIdentifier: id,
@@ -1409,6 +1457,7 @@ func buildMainMenu() -> NSMenu {
     add(file, "Chiudi", #selector(NSWindow.performClose(_:)), "w")
     add(file, "Salva", #selector(NSDocument.save(_:)), "s")
     add(file, "Esporta come PDF…", #selector(ViewerWindowController.exportPDF(_:)), "p", [.command, .option])
+    add(file, "Esporta come HTML…", #selector(ViewerWindowController.exportHTML(_:)), "h", [.command, .shift])
     add(file, "Stampa…", #selector(ViewerWindowController.printContent(_:)), "p")
 
     let edit = submenu("Modifica")

@@ -13,7 +13,7 @@ Quando serve, premi **Modifica** per scriverlo con l'anteprima accanto, aggiorna
 - **Ricerca** nel documento (⌘F).
 - **Tre temi** di lettura (Standard, Libro, Compatto) e modalità scura automatica.
 - Codice colorato, **formule matematiche** (`$…$`, `$$…$$`) e **diagrammi** Mermaid.
-- **Esporta in PDF** e stampa.
+- **Esporta in PDF o HTML** (una pagina unica con immagini, formule e diagrammi incorporati) e stampa.
 - **Anteprima nel Finder**: selezioni un file `.md` e premi la barra spaziatrice.
 - Ricorda dove eri arrivato a leggere in ogni file.
 
@@ -68,7 +68,7 @@ nel Finder. Puoi leggerlo prima di eseguirlo: è il file [`install.sh`](install.
 | ⌘1 · ⌘2 · ⌘3 | Tema Standard · Libro · Compatto |
 | ⌘+ · ⌘− · ⌘0 | Ingrandisci · riduci · dimensione reale |
 | ⌘R | Ricarica dal disco |
-| ⌥⌘P · ⌘P | Esporta PDF · stampa |
+| ⌥⌘P · ⇧⌘H · ⌘P | Esporta PDF · esporta HTML · stampa |
 | ⇧⌘R | Mostra il file nel Finder |
 | ⌥⌘E | Apri il file con un'altra app |
 
@@ -138,7 +138,7 @@ Include marked, highlight.js, KaTeX e Mermaid, ciascuno con la propria licenza l
 
 MD Viewer is a minimal Markdown viewer for macOS 13+ (Apple Silicon and Intel) with an optional
 side-by-side editor and live preview, table of contents, search, themes, syntax highlighting, math
-(KaTeX), Mermaid diagrams, PDF export and a Finder Quick Look preview. The interface is in Italian.
+(KaTeX), Mermaid diagrams, PDF and HTML export and a Finder Quick Look preview. The interface is in Italian.
 Licensed under the GNU GPL v3.
 
 Install from Terminal:
